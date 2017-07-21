@@ -180,16 +180,21 @@ class ImageExportService
     protected function serviceResponseToGdImage($storagePath, $response)
     {
         file_put_contents($storagePath, $response->getContent());
-        $imgResource = null;
-        $contentType = trim($response->headers->get('content-type'));
-        switch ($contentType) {
-            case (preg_match("/image\/png/", $contentType) ? $contentType : !$contentType) :
+        $rawContentType = trim($response->headers->get('content-type'));
+        $contentTypeMatches = array();
+        if (preg_match('#^\s*(image/[\w+])#', $rawContentType, $contentTypeMatches) && !empty($contentTypeMatches[1])) {
+            $matchedContentType = $contentTypeMatches[1];
+        } else {
+            $matchedContentType = $rawContentType;
+        }
+        switch ($matchedContentType) {
+            case "image/png":
                 return imagecreatefrompng($storagePath);
                 break;
-            case (preg_match("/image\/jpeg/", $contentType) ? $contentType : !$contentType) :
+            case "image/jpeg":
                 return imagecreatefromjpeg($storagePath);
                 break;
-            case (preg_match("/image\/gif/", $contentType) ? $contentType : !$contentType) :
+            case "image/gif":
                 return imagecreatefromgif($storagePath);
                 break;
             default:
