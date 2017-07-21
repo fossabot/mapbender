@@ -12,26 +12,21 @@ use OwsProxy3\CoreBundle\Component\CommonProxy;
  *
  * @author Stefan Winkelmann
  */
-class PrintService
+class PrintService extends ImageExportService
 {
-    /** @var PDF_ImageAlpha */
+    /** @var PDF_Extensions */
     protected $pdf;
-    protected $tempdir;
     protected $conf;
-    protected $data;
     protected $rotation;
-    protected $resourceDir;
     protected $finalImageName;
     protected $user;
     protected $tempDir;
-    protected $mapRequests;
     protected $imageWidth;
     protected $imageHeight;
     protected $neededExtentWidth;
     protected $neededExtentHeight;
     protected $neededImageWidth;
     protected $neededImageHeight;
-    protected $urlHostPath;
 
     /**
      * @var array Default geometry style
@@ -40,13 +35,9 @@ class PrintService
         "strokeWidth" => 1
     );
 
-    public function __construct($container)
-    {
-        $this->container = $container;
-    }
-
     public function doPrint($data)
     {
+        $this->reset();
         $this->setup($data);
 
         if ($data['rotation'] == 0) {
@@ -60,12 +51,6 @@ class PrintService
 
     private function setup($data)
     {
-        $this->urlHostPath = $this->container->get('request')->getHttpHost() . $this->container->get('request')->getBaseURL();
-        // temp dir
-        $this->tempDir = sys_get_temp_dir();
-        // resource dir
-        $this->resourceDir = $this->container->getParameter('kernel.root_dir') . '/Resources/MapbenderPrintBundle';
-
         // get user
         /** @var SecurityContext $securityContext */
         $securityContext = $this->container->get('security.context');
@@ -83,8 +68,6 @@ class PrintService
         $this->imageWidth = round($conf['map']['width'] / 25.4 * $data['quality']);
         $this->imageHeight = round($conf['map']['height'] / 25.4 * $data['quality']);
 
-        // map requests array
-        $this->mapRequests = array();
         foreach ($data['layers'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
                 continue;
@@ -283,10 +266,9 @@ class PrintService
 
     private function getImages($width, $height)
     {
-        $logger        = $this->container->get("logger");
         $imageNames    = array();
         foreach ($this->mapRequests as $i => $url) {
-            $logger->debug("Print Request Nr.: " . $i . ' ' . $url);
+            $this->getLogger()->debug("Print Request Nr.: " . $i . ' ' . $url);
             // find urls from this host (tunnel connection for secured services)
             $parsed   = parse_url($url);
             $host = isset($parsed['host']) ? $parsed['host'] : $this->container->get('request')->getHttpHost();
@@ -303,38 +285,23 @@ class PrintService
                 );
                 $subRequest = new Request(array('url' => $url), array(), $attributes, array(), array(), array(), '');
             }
-            $response = $this->container->get('http_kernel')->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
+            /** @var HttpKernelInterface $kernel */
+            $kernel = $this->container->get('http_kernel');
+            $response = $kernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
 
             $imageName    = tempnam($this->tempDir, 'mb_print');
             $imageNames[] = $imageName;
+            $rawImage = $this->serviceResponseToGdImage($imageName, $response);
 
-            file_put_contents($imageName, $response->getContent());
-
-            $rawImage = null;
-            $contentType = trim($response->headers->get('content-type'));
-            switch ($contentType) {
-                case (preg_match("/image\/png/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefrompng($imageName);
-                    break;
-                case (preg_match("/image\/jpeg/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromjpeg($imageName);
-                    break;
-                case (preg_match("/image\/gif/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromgif($imageName);
-                    break;
-                case 'image/bmp' :
-                    $logger->debug("Unsupported mimetype image/bmp");
-                    print_r("Unsupported mimetype image/bmp");
-                    break;
-                default:
-                    $logger->debug("ERROR! PrintRequest failed: " . $url);
-                    $logger->debug($response->getContent());
-                    print_r('an error has occurred. see log for more details <br>');
-                    print_r($response->getContent());
-                    foreach ($imageNames as $i => $imageName) {
-                        unlink($imageName);
-                    }
-                    exit;
+            if (!$rawImage) {
+                $this->getLogger()->debug("ERROR! PrintRequest failed: " . $url);
+                $this->getLogger()->debug($response->getContent());
+                print_r('an error has occurred. see log for more details <br>');
+                print_r($response->getContent());
+                foreach ($imageNames as $i => $imageName) {
+                    unlink($imageName);
+                }
+                exit;
             }
 
             if ($rawImage !== null) {
@@ -369,8 +336,6 @@ class PrintService
 
     private function buildPdf()
     {
-        require_once('PDF_Extensions.php');
-
         // set format
         if($this->conf['orientation'] == 'portrait'){
             $format = array($this->conf['pageSize']['width'],$this->conf['pageSize']['height']);

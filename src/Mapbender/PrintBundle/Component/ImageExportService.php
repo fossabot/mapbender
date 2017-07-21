@@ -23,13 +23,16 @@ class ImageExportService
     /** @var  array */
     protected $data;
     /** @var array */
-    protected $requests = array();
+    protected $mapRequests = array();
+    /** @var string */
+    protected $resourceDir;
 
     public function __construct($container)
     {
         $this->container = $container;
         $this->tempdir = sys_get_temp_dir();
         $this->urlHostPath = $this->container->get('request')->getHttpHost() . $this->container->get('request')->getBaseURL();
+        $this->resourceDir = $this->container->getParameter('kernel.root_dir') . '/Resources/MapbenderPrintBundle';
         $this->reset();
     }
 
@@ -48,7 +51,7 @@ class ImageExportService
      */
     protected function reset()
     {
-        $this->requests = array();
+        $this->mapRequests = array();
     }
 
     public function export($content)
@@ -60,7 +63,7 @@ class ImageExportService
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $this->requests[$i] = $layer['url'];
+            $this->mapRequests[$i] = $layer['url'];
         }
 
         if(isset($this->data['vectorLayers'])){
@@ -82,7 +85,7 @@ class ImageExportService
     private function getImages()
     {
         $temp_names = array();
-        foreach ($this->requests as $k => $url) {
+        foreach ($this->mapRequests as $k => $url) {
             
             $url = strstr($url, '&WIDTH', true);
             $width = '&WIDTH=' . $this->data['width'];
@@ -92,7 +95,8 @@ class ImageExportService
             $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
 
             $parsed   = parse_url($url);
-            $hostpath = $parsed['host'] . $parsed['path'];
+            $host = isset($parsed['host']) ? $parsed['host'] : $this->container->get('request')->getHttpHost();
+            $hostpath = $host . $parsed['path'];
             $pos      = strpos($hostpath, $this->urlHostPath);
             if ($pos === 0 && ($routeStr = substr($hostpath, strlen($this->urlHostPath))) !== false) {
                 $attributes = $this->container->get('router')->match($routeStr);
@@ -352,7 +356,7 @@ class ImageExportService
             // draw label with white halo
             $color = $this->getColor('#ff0000', 1, $image);
             $bgcolor = $this->getColor('#ffffff', 1, $image);
-            $fontPath = $this->container->getParameter('kernel.root_dir') . '/Resources/MapbenderPrintBundle/fonts/';
+            $fontPath = $this->resourceDir . '/fonts/';
             $font = $fontPath . 'OpenSans-Bold.ttf';
             imagettftext($image, 14, 0, $p[0], $p[1]+1, $bgcolor, $font, $geometry['style']['label']);
             imagettftext($image, 14, 0, $p[0], $p[1]-1, $bgcolor, $font, $geometry['style']['label']);
