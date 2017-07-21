@@ -106,28 +106,42 @@ class ImageExportService
                 $height = imagesy($rawImage);
             }
         }
-        // create final merged image
         $finalImageName = tempnam($this->tempdir, 'mb_imgexp_merged');
-        $mergedImage = imagecreatetruecolor($width, $height);
-        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
-        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
-        imagepng($mergedImage, $finalImageName);
-        foreach ($temp_names as $temp_name) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if (is_file($temp_name) && finfo_file($finfo, $temp_name) == 'image/png') {
-                $dest = imagecreatefrompng($finalImageName);
-                $src = imagecreatefrompng($temp_name);
-                imagecopy($dest, $src, 0, 0, 0, 0, $width, $height);
-                imagepng($dest, $finalImageName);
-            }
-            unlink($temp_name);
-            finfo_close($finfo);
-        }
-
+        $this->mergeImages($finalImageName, $temp_names, $width, $height);
         if (isset($this->data['vectorLayers'])) {
             $this->drawFeatures($finalImageName);
         }
         return $finalImageName;
+    }
+
+    /**
+     * Copy PNGs from given inputNames (in order) onto a new image of given
+     * dimensions, and store the resulting merged PNG at $outputName.
+     * All valid input PNGs will be deleted!
+     *
+     * @param string $outputName
+     * @param string[] $inputNames
+     * @param integer $width
+     * @param integer $height
+     */
+    private function mergeImages($outputName, $inputNames, $width, $height)
+    {
+        // create final merged image
+        $mergedImage = imagecreatetruecolor($width, $height);
+        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
+        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
+        imagepng($mergedImage, $outputName);
+        foreach ($inputNames as $inputName) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if (is_file($inputName) && finfo_file($finfo, $inputName) == 'image/png') {
+                $dest = imagecreatefrompng($outputName);
+                $src = imagecreatefrompng($inputName);
+                imagecopy($dest, $src, 0, 0, 0, 0, $width, $height);
+                imagepng($dest, $outputName);
+            }
+            unlink($inputName);
+            finfo_close($finfo);
+        }
     }
 
     /**

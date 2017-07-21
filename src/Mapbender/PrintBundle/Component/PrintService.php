@@ -180,23 +180,9 @@ class PrintService extends ImageExportService
         $height = $this->imageHeight;
         $imageNames = $this->getImages($width, $height);
 
-        // create final merged image
         $this->finalImageName = tempnam($this->tempDir, 'mb_print_final');
-        $finalImage = imagecreatetruecolor($width, $height);
-        $bg = ImageColorAllocate($finalImage, 255, 255, 255);
-        imagefilledrectangle($finalImage, 0, 0, $width, $height, $bg);
+        $this->mergeImages($this->finalImageName, $imageNames, $width, $height);
 
-        foreach ($imageNames as $imageName) {
-            // Note: suppressing the errors IS bad, bad PHP wants us to do it that way
-                $src = imagecreatefrompng($imageName);
-            // Check that imagecreatefrompng did yield something
-            if ($src) {
-                $dest = $finalImage;
-                imagecopy($dest, $src, 0, 0, 0, 0, $width, $height);
-                imagepng($dest, $this->finalImageName);
-                unlink($imageName);
-            }
-        }
         //draw features
         $this->drawFeatures();
     }
@@ -213,23 +199,7 @@ class PrintService extends ImageExportService
 
         // create temp merged image
         $tempImageName = tempnam($this->tempDir, 'mb_print_temp');
-        $tempImage = imagecreatetruecolor($neededImageWidth, $neededImageHeight);
-        $bg = ImageColorAllocate($tempImage, 255, 255, 255);
-        imagefilledrectangle($tempImage, 0, 0, $neededImageWidth, $neededImageHeight, $bg);
-        imagepng($tempImage, $tempImageName);
-
-        foreach ($imageNames as $imageName) {
-            // Note: suppressing the errors IS bad, bad PHP wants us to do it that way
-            $src = imagecreatefrompng($imageName);
-            // Check that imagecreatefrompng did yield something
-            if ($src) {
-                $dest = imagecreatefrompng($tempImageName);
-                imagecopy($dest, $src, 0, 0, 0, 0, $neededImageWidth,
-                    $neededImageHeight);
-                imagepng($dest, $tempImageName);
-                unlink($imageName);
-            }
-        }
+        $this->mergeImages($tempImageName, $imageNames, $neededImageWidth, $neededImageHeight);
 
         // draw features
         $this->finalImageName = $tempImageName;
@@ -264,6 +234,13 @@ class PrintService extends ImageExportService
         imagepng($clippedImage, $this->finalImageName);
     }
 
+    /**
+     * Collect WMS tiles and store them as separate PNG files.
+     *
+     * @param $width
+     * @param $height
+     * @return string[] paths to individual (unmerged) image files
+     */
     private function getImages($width, $height)
     {
         $imageNames    = array();
@@ -292,6 +269,35 @@ class PrintService extends ImageExportService
             }
         }
         return $imageNames;
+    }
+
+    /**
+     * Copy PNGs from given inputNames (in order) onto a new image of given
+     * dimensions, and store the resulting merged PNG at $outputName.
+     * All valid input PNGs will be deleted!
+     *
+     * @param string $outputName
+     * @param string[] $inputNames
+     * @param integer $width
+     * @param integer $height
+     */
+    private function mergeImages($outputName, $inputNames, $width, $height)
+    {
+        // create final merged image
+        $mergedImage = imagecreatetruecolor($width, $height);
+        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
+        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
+        imagepng($mergedImage, $outputName);
+        foreach ($inputNames as $inputName) {
+            // Note: suppressing the errors IS bad, bad PHP wants us to do it that way
+            $src = imagecreatefrompng($inputName);
+            // Check that imagecreatefrompng did yield something
+            if ($src) {
+                imagecopy($mergedImage, $src, 0, 0, 0, 0, $width, $height);
+                imagepng($mergedImage, $outputName);
+                unlink($inputName);
+            }
+        }
     }
 
     private function buildPdf()
@@ -526,24 +532,7 @@ class PrintService extends ImageExportService
 
         // create final merged image
         $finalImageName = tempnam($this->tempdir, 'mb_print_merged');
-        $finalImage = imagecreatetruecolor($ovImageWidth, $ovImageHeight);
-        $bg = ImageColorAllocate($finalImage, 255, 255, 255);
-        imagefilledrectangle($finalImage, 0, 0, $ovImageWidth,
-            $ovImageHeight, $bg);
-        imagepng($finalImage, $finalImageName);
-        foreach ($tempNames as $tempName) {
-            // Note: suppressing the errors IS bad, bad PHP wants us to do it that way
-            $src = imagecreatefrompng($tempName);
-            // Check that imagecreatefrompng did yield something
-            if ($src) {
-                $dest = imagecreatefrompng($finalImageName);
-                $src = imagecreatefrompng($tempName);
-                imagecopy($dest, $src, 0, 0, 0, 0, $ovImageWidth,
-                    $ovImageHeight);
-                imagepng($dest, $finalImageName);
-            }
-            unlink($tempName);
-        }
+        $this->mergeImages($finalImageName, $tempNames, $ovImageWidth, $ovImageHeight);
 
         $image = imagecreatefrompng($finalImageName);
 
