@@ -198,9 +198,10 @@ class ImageExportService
                 return imagecreatefromgif($storagePath);
                 break;
             default:
+                $message = 'Unhandled mimetype ' . var_export($matchedContentType, true);
+                $this->getLogger()->warning($message);
+                // throw new \RuntimeException($message);
                 return null;
-                $this->getLogger()->debug("Unknown mimetype " . trim($response->headers->get('content-type')));
-            //throw new \RuntimeException("Unknown mimetype " . trim($response->headers->get('content-type')));
         }
     }
 
