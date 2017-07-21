@@ -1,6 +1,8 @@
 <?php
 namespace Mapbender\PrintBundle\Component;
 
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
@@ -11,13 +13,32 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 class ImageExportService
 {
+    /** @var ContainerInterface */
+    protected $container;
+    /** @var string */
+    protected $tempdir;
+    /** @var string|null */
     protected $urlHostPath;
+    /** @var  array */
+    protected $data;
+    /** @var array */
+    protected $requests = array();
 
     public function __construct($container)
     {
         $this->container = $container;
         $this->tempdir = sys_get_temp_dir();
         $this->urlHostPath = $this->container->get('request')->getHttpHost() . $this->container->get('request')->getBaseURL();
+    }
+
+    /**
+     * @return LoggerInterface
+     */
+    protected function getLogger()
+    {
+        /** @var LoggerInterface $logger */
+        $logger = $this->container->get("logger");
+        return $logger;
     }
 
     public function export($content)
@@ -50,7 +71,7 @@ class ImageExportService
             $height = '&HEIGHT=' . $this->data['height'];
             $url .= $width . $height;
             
-            $this->container->get("logger")->debug("Image Export Request Nr.: " . $k . ' ' . $url);
+            $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
 
             $parsed   = parse_url($url);
             $hostpath = $parsed['host'] . $parsed['path'];
@@ -66,27 +87,29 @@ class ImageExportService
                 );
                 $subRequest = new Request(array('url' => $url), array(), $attributes, array(), array(), array(), '');
             }
-            $response = $this->container->get('http_kernel')->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
+            /** @var HttpKernelInterface $kernel */
+            $kernel = $this->container->get('http_kernel');
+            $response = $kernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
 
-            $imagename = tempnam($this->tempdir, 'mb_imgexp');
-            $temp_names[] = $imagename;
+            $imageName = tempnam($this->tempdir, 'mb_imgexp');
+            $temp_names[] = $imageName;
 
-            file_put_contents($imagename, $response->getContent());
+            file_put_contents($imageName, $response->getContent());
             $rawImage = null;
             $contentType = trim($response->headers->get('content-type'));
             switch ($contentType) {
                 case (preg_match("/image\/png/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefrompng($imagename);
+                    $rawImage = imagecreatefrompng($imageName);
                     break;
                 case (preg_match("/image\/jpeg/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromjpeg($imagename);
+                    $rawImage = imagecreatefromjpeg($imageName);
                     break;
                 case (preg_match("/image\/gif/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromgif($imagename);
+                    $rawImage = imagecreatefromgif($imageName);
                     break;
                 default:
                     continue;
-                    $this->container->get("logger")->debug("Unknown mimetype " . trim($response->headers->get('content-type')));
+                    $this->getLogger()->debug("Unknown mimetype " . trim($response->headers->get('content-type')));
                 //throw new \RuntimeException("Unknown mimetype " . trim($response->headers->get('content-type')));
             }
 
@@ -119,7 +142,7 @@ class ImageExportService
                         }
                     }
                 }
-                imagepng($image, $imagename);
+                imagepng($image, $imageName);
             }
         }
 
@@ -332,13 +355,13 @@ class ImageExportService
         $maxY = $centery + $map_height * 0.5;
 
         $extentx = $maxX - $minX ;
-	$extenty = $maxY - $minY ;
+        $extenty = $maxY - $minY ;
 
-        $pixPos_x = (($rw_x - $minX)/$extentx) * $width;
-	$pixPos_y = (($maxY - $rw_y)/$extenty) * $height;
+        $pixPos_x = (($rw_x - $minX) / $extentx) * $width;
+        $pixPos_y = (($maxY - $rw_y) / $extenty) * $height;
 
         $pixPos = array($pixPos_x, $pixPos_y);
 
-	return $pixPos;
+        return $pixPos;
     }
 }
