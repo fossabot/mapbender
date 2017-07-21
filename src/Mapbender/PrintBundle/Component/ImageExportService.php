@@ -4,6 +4,7 @@ namespace Mapbender\PrintBundle\Component;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 /**
@@ -110,25 +111,7 @@ class ImageExportService
 
             $imageName = tempnam($this->tempdir, 'mb_imgexp');
             $temp_names[] = $imageName;
-
-            file_put_contents($imageName, $response->getContent());
-            $rawImage = null;
-            $contentType = trim($response->headers->get('content-type'));
-            switch ($contentType) {
-                case (preg_match("/image\/png/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefrompng($imageName);
-                    break;
-                case (preg_match("/image\/jpeg/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromjpeg($imageName);
-                    break;
-                case (preg_match("/image\/gif/", $contentType) ? $contentType : !$contentType) :
-                    $rawImage = imagecreatefromgif($imageName);
-                    break;
-                default:
-                    continue;
-                    $this->getLogger()->debug("Unknown mimetype " . trim($response->headers->get('content-type')));
-                //throw new \RuntimeException("Unknown mimetype " . trim($response->headers->get('content-type')));
-            }
+            $rawImage = $this->serviceResponseToGdImage($imageName, $response);
 
             if ($rawImage !== null) {
                 $width = imagesx($rawImage);
@@ -185,6 +168,35 @@ class ImageExportService
             $this->drawFeatures($finalImageName);
         }
         return $finalImageName;
+    }
+
+    /**
+     * Converts a http response to a GD image, respecting the mimetype.
+     *
+     * @param string $storagePath for temp file storage
+     * @param Response $response
+     * @return resource|null GD image or null on failure
+     */
+    protected function serviceResponseToGdImage($storagePath, $response)
+    {
+        file_put_contents($storagePath, $response->getContent());
+        $imgResource = null;
+        $contentType = trim($response->headers->get('content-type'));
+        switch ($contentType) {
+            case (preg_match("/image\/png/", $contentType) ? $contentType : !$contentType) :
+                return imagecreatefrompng($storagePath);
+                break;
+            case (preg_match("/image\/jpeg/", $contentType) ? $contentType : !$contentType) :
+                return imagecreatefromjpeg($storagePath);
+                break;
+            case (preg_match("/image\/gif/", $contentType) ? $contentType : !$contentType) :
+                return imagecreatefromgif($storagePath);
+                break;
+            default:
+                return null;
+                $this->getLogger()->debug("Unknown mimetype " . trim($response->headers->get('content-type')));
+            //throw new \RuntimeException("Unknown mimetype " . trim($response->headers->get('content-type')));
+        }
     }
 
     /**
