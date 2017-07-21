@@ -94,62 +94,18 @@ class ImageExportService
             
             $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
 
-            $parsed   = parse_url($url);
-            $host = isset($parsed['host']) ? $parsed['host'] : $this->container->get('request')->getHttpHost();
-            $hostpath = $host . $parsed['path'];
-            $pos      = strpos($hostpath, $this->urlHostPath);
-            if ($pos === 0 && ($routeStr = substr($hostpath, strlen($this->urlHostPath))) !== false) {
-                $attributes = $this->container->get('router')->match($routeStr);
-                $gets       = array();
-                parse_str($parsed['query'], $gets);
-                $subRequest = new Request($gets, array(), $attributes, array(), array(), array(), '');
-            } else {
-                $attributes = array(
-                    '_controller' => 'OwsProxy3CoreBundle:OwsProxy:entryPoint'
-                );
-                $subRequest = new Request(array('url' => $url), array(), $attributes, array(), array(), array(), '');
-            }
-            /** @var HttpKernelInterface $kernel */
-            $kernel = $this->container->get('http_kernel');
-            $response = $kernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
+            $mapRequestResponse = $this->mapRequest($url);
 
             $imageName = tempnam($this->tempdir, 'mb_imgexp');
             $temp_names[] = $imageName;
-            $rawImage = $this->serviceResponseToGdImage($imageName, $response);
+            $rawImage = $this->serviceResponseToGdImage($imageName, $mapRequestResponse);
 
             if ($rawImage !== null) {
+                $this->forceToRgba($imageName, $rawImage, $this->data['requests'][$k]['opacity']);
                 $width = imagesx($rawImage);
                 $height = imagesy($rawImage);
-
-                // Make sure input image is truecolor with alpha, regardless of input mode!
-                $image = imagecreatetruecolor($width, $height);
-                imagealphablending($image, false);
-                imagesavealpha($image, true);
-                imagecopyresampled($image, $rawImage, 0, 0, 0, 0, $width, $height, $width, $height);
-
-                // Taking the painful way to alpha blending. Stupid PHP-GD
-                $opacity = floatVal($this->data['requests'][$k]['opacity']);
-                if(1.0 !== $opacity) {
-                    for ($x = 0; $x < $width; $x++) {
-                        for ($y = 0; $y < $height; $y++) {
-                            $colorIn = imagecolorsforindex($image, imagecolorat($image, $x, $y));
-                            $alphaOut = 127 - (127 - $colorIn['alpha']) * $opacity;
-
-                            $colorOut = imagecolorallocatealpha(
-                                $image,
-                                $colorIn['red'],
-                                $colorIn['green'],
-                                $colorIn['blue'],
-                                $alphaOut);
-                            imagesetpixel($image, $x, $y, $colorOut);
-                            imagecolordeallocate($image, $colorOut);
-                        }
-                    }
-                }
-                imagepng($image, $imageName);
             }
         }
-
         // create final merged image
         $finalImageName = tempnam($this->tempdir, 'mb_imgexp_merged');
         $mergedImage = imagecreatetruecolor($width, $height);
@@ -172,6 +128,76 @@ class ImageExportService
             $this->drawFeatures($finalImageName);
         }
         return $finalImageName;
+    }
+
+    /**
+     * Convert a GD image to true-color RGBA and write it back to the file
+     * system.
+     *
+     * @param string $imageName will be overwritten
+     * @param resource $imageResource source image
+     * @param float $opacity in [0;1]
+     */
+    protected function forceToRgba($imageName, $imageResource, $opacity)
+    {
+        $width = imagesx($imageResource);
+        $height = imagesy($imageResource);
+
+        // Make sure input image is truecolor with alpha, regardless of input mode!
+        $image = imagecreatetruecolor($width, $height);
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+        imagecopyresampled($image, $imageResource, 0, 0, 0, 0, $width, $height, $width, $height);
+
+        // Taking the painful way to alpha blending. Stupid PHP-GD
+        if (1.0 !== $opacity) {
+            for ($x = 0; $x < $width; $x++) {
+                for ($y = 0; $y < $height; $y++) {
+                    $colorIn = imagecolorsforindex($image, imagecolorat($image, $x, $y));
+                    $alphaOut = 127 - (127 - $colorIn['alpha']) * $opacity;
+
+                    $colorOut = imagecolorallocatealpha(
+                        $image,
+                        $colorIn['red'],
+                        $colorIn['green'],
+                        $colorIn['blue'],
+                        $alphaOut);
+                    imagesetpixel($image, $x, $y, $colorOut);
+                    imagecolordeallocate($image, $colorOut);
+                }
+            }
+        }
+        imagepng($image, $imageName);
+    }
+
+    /**
+     * Query a (presumably) WMS service $url and return the Response object.
+     *
+     * @param string $url
+     * @return Response
+     */
+    protected function mapRequest($url)
+    {
+        // find urls from this host (tunnel connection for secured services)
+        $parsed   = parse_url($url);
+        $host = isset($parsed['host']) ? $parsed['host'] : $this->container->get('request')->getHttpHost();
+        $hostpath = $host . $parsed['path'];
+        $pos      = strpos($hostpath, $this->urlHostPath);
+        if ($pos === 0 && ($routeStr = substr($hostpath, strlen($this->urlHostPath))) !== false) {
+            $attributes = $this->container->get('router')->match($routeStr);
+            $gets       = array();
+            parse_str($parsed['query'], $gets);
+            $subRequest = new Request($gets, array(), $attributes, array(), array(), array(), '');
+        } else {
+            $attributes = array(
+                '_controller' => 'OwsProxy3CoreBundle:OwsProxy:entryPoint'
+            );
+            $subRequest = new Request(array('url' => $url), array(), $attributes, array(), array(), array(), '');
+        }
+        /** @var HttpKernelInterface $kernel */
+        $kernel = $this->container->get('http_kernel');
+        $response = $kernel->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
+        return $response;
     }
 
     /**
