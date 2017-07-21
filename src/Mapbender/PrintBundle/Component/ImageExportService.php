@@ -29,6 +29,7 @@ class ImageExportService
         $this->container = $container;
         $this->tempdir = sys_get_temp_dir();
         $this->urlHostPath = $this->container->get('request')->getHttpHost() . $this->container->get('request')->getBaseURL();
+        $this->reset();
     }
 
     /**
@@ -41,8 +42,17 @@ class ImageExportService
         return $logger;
     }
 
+    /**
+     * Clean up internally modified / collected state
+     */
+    protected function reset()
+    {
+        $this->requests = array();
+    }
+
     public function export($content)
     {
+        $this->reset();
         $this->data = json_decode($content, true);
 
         foreach ($this->data['requests'] as $i => $layer) {
