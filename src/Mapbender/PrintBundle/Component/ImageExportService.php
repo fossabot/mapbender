@@ -63,7 +63,10 @@ class ImageExportService
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $this->mapRequests[$i] = $layer['url'];
+            $baseUrl = strstr($layer['url'], '&WIDTH', true);
+            $width = '&WIDTH=' . $this->data['width'];
+            $height = '&HEIGHT=' . $this->data['height'];
+            $this->mapRequests[$i] = $baseUrl . $width . $height;
         }
 
         if(isset($this->data['vectorLayers'])){
@@ -86,12 +89,6 @@ class ImageExportService
     {
         $temp_names = array();
         foreach ($this->mapRequests as $k => $url) {
-            
-            $url = strstr($url, '&WIDTH', true);
-            $width = '&WIDTH=' . $this->data['width'];
-            $height = '&HEIGHT=' . $this->data['height'];
-            $url .= $width . $height;
-            
             $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
 
             $mapRequestResponse = $this->mapRequest($url);
