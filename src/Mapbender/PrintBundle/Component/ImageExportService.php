@@ -121,24 +121,22 @@ class ImageExportService
      * @param integer $width
      * @param integer $height
      */
-    private function mergeImages($outputName, $inputNames, $width, $height)
+    protected function mergeImages($outputName, $inputNames, $width, $height)
     {
         // create final merged image
         $mergedImage = imagecreatetruecolor($width, $height);
         $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
         imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
-        imagepng($mergedImage, $outputName);
         foreach ($inputNames as $inputName) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            if (is_file($inputName) && finfo_file($finfo, $inputName) == 'image/png') {
-                $dest = imagecreatefrompng($outputName);
+            $src = @imagecreatefrompng($inputName);
+            if ($src) {
                 $src = imagecreatefrompng($inputName);
-                imagecopy($dest, $src, 0, 0, 0, 0, $width, $height);
-                imagepng($dest, $outputName);
+                imagecopy($mergedImage, $src, 0, 0, 0, 0, $width, $height);
+                imagedestroy($src);
             }
             unlink($inputName);
-            finfo_close($finfo);
         }
+        imagepng($mergedImage, $outputName);
     }
 
     /**
@@ -265,28 +263,34 @@ class ImageExportService
         }
     }
 
+    /**
+     * @return array[]
+     */
+    protected function getGeometryLayers()
+    {
+        return $this->data['vectorLayers'];
+    }
+
     private function drawFeatures($finalImageName)
     {
         $image = imagecreatefrompng($finalImageName);
         imagesavealpha($image, true);
         imagealphablending($image, true);
 
-        foreach($this->data['vectorLayers'] as $idx => $layer) {
+        foreach ($this->getGeometryLayers() as $layer) {
             foreach($layer['geometries'] as $geometry) {
                 $renderMethodName = 'draw' . $geometry['type'];
-
                 if(!method_exists($this, $renderMethodName)) {
                     continue;
                     //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
                 }
-
                 $this->$renderMethodName($geometry, $image);
             }
         }
         imagepng($image, $finalImageName);
     }
 
-    private function getColor($color, $alpha, $image)
+    protected function getColor($color, $alpha, $image)
     {
         list($r, $g, $b) = CSSColorParser::parse($color);
 
@@ -300,6 +304,7 @@ class ImageExportService
 
     private function drawPolygon($geometry, $image)
     {
+        $style = $this->getStyle($geometry);
         foreach($geometry['coordinates'] as $ring) {
             if(count($ring) < 3) {
                 continue;
@@ -313,25 +318,28 @@ class ImageExportService
             }
             imagesetthickness($image, 0);
             // Filled area
-            if($geometry['style']['fillOpacity'] > 0){
+            if($style['fillOpacity'] > 0){
                 $color = $this->getColor(
-                    $geometry['style']['fillColor'],
-                    $geometry['style']['fillOpacity'],
+                    $style['fillColor'],
+                    $style['fillOpacity'],
                     $image);
                 imagefilledpolygon($image, $points, count($ring), $color);
             }
             // Border
-            $color = $this->getColor(
-                $geometry['style']['strokeColor'],
-                $geometry['style']['strokeOpacity'],
-                $image);
-            imagesetthickness($image, $geometry['style']['strokeWidth']);
-            imagepolygon($image, $points, count($ring), $color);
+            if ($style['strokeWidth'] > 0) {
+                $color = $this->getColor(
+                    $style['strokeColor'],
+                    $style['strokeOpacity'],
+                    $image);
+                imagesetthickness($image, $style['strokeWidth'] * $this->getResizeFactor());
+                imagepolygon($image, $points, count($ring), $color);
+            }
         }
     }
 
     private function drawMultiPolygon($geometry, $image)
     {
+        $style = $this->getStyle($geometry);
         foreach($geometry['coordinates'][0] as $ring) {
             if(count($ring) < 3) {
                 continue;
@@ -345,33 +353,35 @@ class ImageExportService
             }
             imagesetthickness($image, 0);
             // Filled area
-            if($geometry['style']['fillOpacity'] > 0){
+            if($style['fillOpacity'] > 0){
                 $color = $this->getColor(
-                    $geometry['style']['fillColor'],
-                    $geometry['style']['fillOpacity'],
+                    $style['fillColor'],
+                    $style['fillOpacity'],
                     $image);
                 imagefilledpolygon($image, $points, count($ring), $color);
             }
             // Border
-            $color = $this->getColor(
-                $geometry['style']['strokeColor'],
-                $geometry['style']['strokeOpacity'],
-                $image);
-            imagesetthickness($image, $geometry['style']['strokeWidth']);
-            imagepolygon($image, $points, count($ring), $color);
+            if ($style['strokeWidth'] > 0) {
+                $color = $this->getColor(
+                    $style['strokeColor'],
+                    $style['strokeOpacity'],
+                    $image);
+                imagesetthickness($image, $style['strokeWidth'] * $this->getResizeFactor());
+                imagepolygon($image, $points, count($ring), $color);
+            }
         }
     }
 
     private function drawLineString($geometry, $image)
     {
+        $style = $this->getStyle($geometry);
         $color = $this->getColor(
-            $geometry['style']['strokeColor'],
-            $geometry['style']['strokeOpacity'],
+            $style['strokeColor'],
+            $style['strokeOpacity'],
             $image);
-        imagesetthickness($image, $geometry['style']['strokeWidth']);
+        imagesetthickness($image, $style['strokeWidth'] * $this->getResizeFactor());
 
         for($i = 1; $i < count($geometry['coordinates']); $i++) {
-
             $from = $this->realWorld2mapPos(
                 $geometry['coordinates'][$i - 1][0],
                 $geometry['coordinates'][$i - 1][1]);
@@ -383,46 +393,103 @@ class ImageExportService
         }
     }
 
+    private function drawMultiLineString($geometry, $image)
+    {
+        $resizeFactor = $this->getResizeFactor();
+        $style = $this->getStyle($geometry);
+        $color = $this->getColor(
+            $style['strokeColor'],
+            $style['strokeOpacity'],
+            $image);
+        if ($style['strokeWidth'] == 0) {
+            return;
+        }
+        imagesetthickness($image, $style['strokeWidth'] * $resizeFactor);
+
+        foreach($geometry['coordinates'] as $coords) {
+            for($i = 1; $i < count($coords); $i++) {
+                $from = $this->realWorld2mapPos(
+                    $coords[$i - 1][0],
+                    $coords[$i - 1][1]);
+                $to = $this->realWorld2mapPos(
+                    $coords[$i][0],
+                    $coords[$i][1]);
+                imageline($image, $from[0], $from[1], $to[0], $to[1], $color);
+            }
+        }
+    }
+
+    /**
+     * @param resource $image GD image
+     * @param float[] $center x/y
+     * @param $fontSize
+     * @param $text
+     * @param array $style
+     */
+    protected function drawHaloText($image, $center, $fontSize, $text, $style = array())
+    {
+        // use color / background from style, default to black text on white halo outline
+        if (!empty($style['fontColor'])) {
+            $color = $this->getColor($style['fontColor'], 1, $image);
+        } else {
+            $color = $this->getColor('#ff0000', 1, $image);
+        }
+        if (!empty($style['labelOutlineColor'])) {
+            $bgcolor = $this->getColor($style['labelOutlineColor'], 1, $image);
+        } else {
+            $bgcolor = $this->getColor('#ffffff', 1, $image);
+        }
+        $fontPath = $this->resourceDir . '/fonts/';
+        $font = $fontPath . 'OpenSans-Bold.ttf';
+        $haloOffset = $this->getResizeFactor();
+        $fontSize *= $this->getResizeFactor();
+        imagettftext($image, $fontSize, 0,
+            $center[0], $center[1]+$haloOffset, $bgcolor, $font, $text);
+        imagettftext($image, $fontSize, 0,
+            $center[0], $center[1]-$haloOffset, $bgcolor, $font, $text);
+        imagettftext($image, $fontSize, 0,
+            $center[0]-$haloOffset, $center[1], $bgcolor, $font, $text);
+        imagettftext($image, $fontSize, 0,
+            $center[0]+$haloOffset, $center[1], $bgcolor, $font, $text);
+        imagettftext($image, $fontSize, 0,
+            $center[0], $center[1], $color, $font, $style['label']);
+    }
+
     private function drawPoint($geometry, $image)
     {
+        $style = $this->getStyle($geometry);
         $c = $geometry['coordinates'];
 
         $p = $this->realWorld2mapPos($c[0], $c[1]);
 
-        if(isset($geometry['style']['label'])){
-            // draw label with white halo
-            $color = $this->getColor('#ff0000', 1, $image);
-            $bgcolor = $this->getColor('#ffffff', 1, $image);
-            $fontPath = $this->resourceDir . '/fonts/';
-            $font = $fontPath . 'OpenSans-Bold.ttf';
-            imagettftext($image, 14, 0, $p[0], $p[1]+1, $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, 14, 0, $p[0], $p[1]-1, $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, 14, 0, $p[0]-1, $p[1], $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, 14, 0, $p[0]+1, $p[1], $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, 14, 0, $p[0], $p[1], $color, $font, $geometry['style']['label']);
+        if(isset($style['label'])){
+            $this->drawHaloText($image, $p, 14, $style['label'], $style);
             return;
+            //??? this was here before. Label means no point is rendered?
         }
 
-        $radius = $geometry['style']['pointRadius'];
+        $radius = $style['pointRadius'];
         // Filled circle
-        if($geometry['style']['fillOpacity'] > 0){
+        if($style['fillOpacity'] > 0){
             $color = $this->getColor(
-                $geometry['style']['fillColor'],
-                $geometry['style']['fillOpacity'],
+                $style['fillColor'],
+                $style['fillOpacity'],
                 $image);
             imagefilledellipse($image, $p[0], $p[1], 2*$radius, 2*$radius, $color);
         }
         // Circle border
         $color = $this->getColor(
-            $geometry['style']['strokeColor'],
-            $geometry['style']['strokeOpacity'],
+            $style['strokeColor'],
+            $style['strokeOpacity'],
             $image);
         imageellipse($image, $p[0], $p[1], 2*$radius, 2*$radius, $color);
     }
 
+    /**
+     * @return float[] pixel offset x / y
+     */
     private function realWorld2mapPos($rw_x,$rw_y)
     {
-        $quality = 72;
         $map_width = $this->data['extentwidth'];
         $map_height = $this->data['extentheight'];
         $centerx = $this->data['centerx'];
@@ -445,5 +512,36 @@ class ImageExportService
         $pixPos = array($pixPos_x, $pixPos_y);
 
         return $pixPos;
+    }
+
+    /**
+     * Get the target resolution in DPI
+     *
+     * @return int
+     */
+    protected function getQualityDpi()
+    {
+        return 72;
+    }
+
+    /**
+     * Returns a scale factor for the thickness of vector
+     * outlines.
+     * See  https://github.com/mapbender/mapbender/pull/575
+     *
+     * @return int|float
+     */
+    protected function getResizeFactor()
+    {
+        return $this->getQualityDpi() / 72;
+    }
+
+    /**
+     * @param array $geometry
+     * @return array
+     */
+    protected function getStyle($geometry)
+    {
+        return $geometry['style'];
     }
 }

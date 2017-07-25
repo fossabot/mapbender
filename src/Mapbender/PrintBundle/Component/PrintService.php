@@ -59,14 +59,15 @@ class PrintService extends ImageExportService
 
         // data from client
         $this->data = $data;
+        $dpiQuality = $this->getQualityDpi();
 
         // template configuration from odg
         $odgParser = new OdgParser($this->container);
         $this->conf = $conf = $odgParser->getConf($data['template']);
 
         // image size
-        $this->imageWidth = round($conf['map']['width'] / 25.4 * $data['quality']);
-        $this->imageHeight = round($conf['map']['height'] / 25.4 * $data['quality']);
+        $this->imageWidth = round($conf['map']['width'] / 25.4 * $dpiQuality);
+        $this->imageHeight = round($conf['map']['height'] / 25.4 * $dpiQuality);
 
         foreach ($data['layers'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
@@ -129,49 +130,44 @@ class PrintService extends ImageExportService
             $request .= '&BBOX=' . $minX . ',' . $minY . ',' . $maxX . ',' . $maxY;
             $request .= $width . $height;
 
-            if(!isset($this->data['replace_pattern'])){
-                if ($this->data['quality'] != '72') {
-                    $request .= '&map_resolution=' . $this->data['quality'];
+            if (isset($this->data['replace_pattern'])) {
+                $request = $this->addReplacePattern($request, $dpiQuality);
+            } else {
+                if ($dpiQuality != '72') {
+                    $request .= '&map_resolution=' . $dpiQuality;
                 }
             }
 
             $this->mapRequests[$i] = $request;
         }
 
-        if(isset($this->data['replace_pattern'])){
-            $this->addReplacePattern();
-        }
 
     }
 
-    private function addReplacePattern()
+    /**
+     * Modifies request $url with magical undocumented pattern array logic
+     *
+     * @param string $url
+     * @param int $quality
+     * @return string
+     */
+    private function addReplacePattern($url, $quality)
     {
-        $quality = $this->data['quality'];
         $default = '';
-        foreach ($this->mapRequests as $k => $url) {
-            foreach ($this->data['replace_pattern'] as $rKey => $pattern) {
-                if(isset($pattern['default'])){
-                    if(isset($pattern['default'][$quality])){
-                        $default = $pattern['default'][$quality];
-                    }
-                    continue;
+        foreach ($this->data['replace_pattern'] as $rKey => $pattern) {
+            if (isset($pattern['default'])) {
+                if(isset($pattern['default'][$quality])){
+                    $default = $pattern['default'][$quality];
                 }
-                if(strpos($url,$pattern['pattern']) === false){
-                    continue;
+            } elseif (strpos($url,$pattern['pattern']) !== false) {
+                if(isset($pattern['replacement'][$quality])){
+                    $url = str_replace($pattern['pattern'], $pattern['replacement'][$quality], $url);
+                    $signer = $this->container->get('signer');
+                    return $signer->signUrl($url);
                 }
-                if(strpos($url,$pattern['pattern']) !== false){
-                    if(isset($pattern['replacement'][$quality])){
-                        $url = str_replace($pattern['pattern'], $pattern['replacement'][$quality], $url);
-                        $signer = $this->container->get('signer');
-                        $this->mapRequests[$k] = $signer->signUrl($url);
-                        continue 2;
-                    }
-                }
-
             }
-            $url .= $default;
-            $this->mapRequests[$k] = $url;
         }
+        return $url . $default;
     }
 
     private function createFinalMapImage()
@@ -269,35 +265,6 @@ class PrintService extends ImageExportService
             }
         }
         return $imageNames;
-    }
-
-    /**
-     * Copy PNGs from given inputNames (in order) onto a new image of given
-     * dimensions, and store the resulting merged PNG at $outputName.
-     * All valid input PNGs will be deleted!
-     *
-     * @param string $outputName
-     * @param string[] $inputNames
-     * @param integer $width
-     * @param integer $height
-     */
-    private function mergeImages($outputName, $inputNames, $width, $height)
-    {
-        // create final merged image
-        $mergedImage = imagecreatetruecolor($width, $height);
-        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
-        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
-        imagepng($mergedImage, $outputName);
-        foreach ($inputNames as $inputName) {
-            // Note: suppressing the errors IS bad, bad PHP wants us to do it that way
-            $src = imagecreatefrompng($inputName);
-            // Check that imagecreatefrompng did yield something
-            if ($src) {
-                imagecopy($mergedImage, $src, 0, 0, 0, 0, $width, $height);
-                imagepng($mergedImage, $outputName);
-                unlink($inputName);
-            }
-        }
     }
 
     private function buildPdf()
@@ -709,27 +676,6 @@ class PrintService extends ImageExportService
         return $feature;
     }
 
-    private function getColor($color, $alpha, $image)
-    {
-        list($r, $g, $b) = CSSColorParser::parse($color);
-
-        if(0 == $alpha) {
-            return ImageColorAllocate($image, $r, $g, $b);
-        } else {
-            $a = (1 - $alpha) * 127.0;
-            return imagecolorallocatealpha($image, $r, $g, $b, $a);
-        }
-    }
-
-    private function getResizeFactor()
-    {
-        if ($this->data['quality'] != 72) {
-            return $this->data['quality'] / 72;
-        } else {
-            return 1;
-        }
-    }
-
     private function drawPolygon($geometry, $image)
     {
         $resizeFactor = $this->getResizeFactor();
@@ -895,18 +841,7 @@ class PrintService extends ImageExportService
         }
 
         if(isset($style['label'])){
-            // draw label with halo
-            $color = $this->getColor($style['fontColor'], 1, $image);
-            $bgcolor = $this->getColor($style['labelOutlineColor'], 1, $image);
-            $fontPath = $this->resourceDir.'/fonts/';
-            $font = $fontPath . 'OpenSans-Bold.ttf';
-
-            $fontSize = 10 * $resizeFactor;
-            imagettftext($image, $fontSize, 0, $p[0], $p[1]+$resizeFactor, $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, $fontSize, 0, $p[0], $p[1]-$resizeFactor, $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, $fontSize, 0, $p[0]-$resizeFactor, $p[1], $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, $fontSize, 0, $p[0]+$resizeFactor, $p[1], $bgcolor, $font, $geometry['style']['label']);
-            imagettftext($image, $fontSize, 0, $p[0], $p[1], $color, $font, $style['label']);
+            $this->drawHaloText($image, $p, 10, $style['label'], $style);
         }
 
         $radius = $resizeFactor * $style['pointRadius'];
@@ -930,17 +865,28 @@ class PrintService extends ImageExportService
         }
     }
 
+    /**
+     * @return array[]
+     */
+    protected function getGeometryLayers()
+    {
+        $geoLayers = array();
+        foreach ($this->data['layers'] as $layer) {
+            if ('GeoJSON+Style' === $layer['type']) {
+                $geoLayers[] = $layer;
+            }
+        }
+        return $geoLayers;
+    }
+
+
     private function drawFeatures()
     {
         $image = imagecreatefrompng($this->finalImageName);
         imagesavealpha($image, true);
         imagealphablending($image, true);
 
-        foreach ($this->data['layers'] as $idx => $layer) {
-            if ('GeoJSON+Style' !== $layer['type']) {
-                continue;
-            }
-
+        foreach ($this->getGeometryLayers() as $idx => $layer) {
             foreach ($layer['geometries'] as $geometry) {
                 $renderMethodName = 'draw' . $geometry['type'];
                 if (!method_exists($this, $renderMethodName)) {
@@ -1126,9 +1072,17 @@ class PrintService extends ImageExportService
 
 
 
+    /**
+     * @param float $rw_x
+     * @param float $rw_y
+     * @return float[] pixel offset x / y
+     * @todo: Consolidate with both parent implementation and "realWorld2rotatedMapPos".
+     *        The incompatibility here is the only reason we have to keep the (identical)
+     *        copy-pasted copies of private drawFeatures all other draw* methods it calls.
+     */
     private function realWorld2mapPos($rw_x, $rw_y)
     {
-        $quality   = $this->data['quality'];
+        $quality   = $this->getQualityDpi();
         $mapWidth  = $this->data['extent']['width'];
         $mapHeight = $this->data['extent']['height'];
         $centerx   = $this->data['center']['x'];
@@ -1173,7 +1127,7 @@ class PrintService extends ImageExportService
 
     private function realWorld2ovMapPos($ovWidth, $ovHeight, $rw_x, $rw_y)
     {
-        $quality  = $this->data['quality'];
+        $quality  = $this->getQualityDpi();
         $centerx  = $this->data['center']['x'];
         $centery  = $this->data['center']['y'];
         $minX     = $centerx - $ovWidth * 0.5;
@@ -1205,14 +1159,11 @@ class PrintService extends ImageExportService
     }
 
     /**
-     * Get geometry style
-     *
-     * @param string $geometry Geometry
-     * @return array Style
+     * @inheritdoc
      */
-    private function getStyle($geometry)
+    protected function getStyle($geometry)
     {
-        return array_merge($this->defaultStyle, $geometry['style']);
+        return array_merge($this->defaultStyle, parent::getStyle($geometry));
     }
 
     private function checkPdfBackground($pdf) {
@@ -1229,4 +1180,15 @@ class PrintService extends ImageExportService
         return false;
     }
 
+    /**
+     * @inheritdoc
+     */
+    protected function getQualityDpi()
+    {
+        if (!empty($this->data['quality'])) {
+            return intval($this->data['quality']);
+        } else {
+            return parent::getQualityDpi();
+        }
+    }
 }
