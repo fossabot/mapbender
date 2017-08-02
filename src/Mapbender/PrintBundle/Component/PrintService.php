@@ -1041,30 +1041,9 @@ class PrintService extends ImageExportService
 
     private function getLegendImage($url)
     {
-
-        $url      = urldecode($url);
-        $parsed   = parse_url($url);
-        $host = isset($parsed['host']) ? $parsed['host'] : $this->container->get('request')->getHttpHost();
-        $hostpath = $host . $parsed['path'];
-        $pos      = strpos($hostpath, $this->urlHostPath);
-        if ($pos === 0 && ($routeStr = substr($hostpath, strlen($this->urlHostPath))) !== false) {
-            $attributes = $this->container->get('router')->match($routeStr);
-            $gets       = array();
-            parse_str($parsed['query'], $gets);
-            $subRequest = new Request($gets, array(), $attributes, array(), array(), array(), '');
-            $response   = $this->container->get('http_kernel')->handle($subRequest, HttpKernelInterface::SUB_REQUEST);
-            $imagename  = tempnam($this->tempdir, 'mb_printlegend');
-            file_put_contents($imagename, $response->getContent());
-        } else {
-            $proxy_config    = $this->container->getParameter("owsproxy.proxy");
-            $proxy_query     = ProxyQuery::createFromUrl($url);
-            $proxy           = new CommonProxy($proxy_config, $proxy_query);
-            $browserResponse = $proxy->handle();
-
-            $imagename = tempnam($this->tempdir, 'mb_printlegend');
-            file_put_contents($imagename, $browserResponse->getContent());
-        }
-
+        $response = $this->mapRequest($url);
+        $imagename  = tempnam($this->tempdir, 'mb_printlegend');
+        file_put_contents($imagename, $response->getContent());
         return $imagename;
     }
 
