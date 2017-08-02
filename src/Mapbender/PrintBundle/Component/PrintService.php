@@ -455,27 +455,24 @@ class PrintService extends ImageExportService
             $centerx = $this->data['center']['x'];
             $centery = $this->data['center']['y'];
 
-            if (!empty($layer['changeAxis'])) {
-                $ovWidth = $this->conf['overview']['height'] * $layer['scale'] / 1000;
-                $ovHeight = $this->conf['overview']['width'] * $layer['scale'] / 1000;
-                $centerx = $this->data['center']['y'];
-                $centery = $this->data['center']['x'];
-                $changeAxis = true;
-            }
-
             $minX = $centerx - $ovWidth * 0.5;
             $minY = $centery - $ovHeight * 0.5;
             $maxX = $centerx + $ovWidth * 0.5;
             $maxY = $centery + $ovHeight * 0.5;
-            $bbox = '&BBOX=' . $minX . ',' . $minY . ',' . $maxX . ',' . $maxY;
+            if (empty($layer['changeAxis'])) {
+                $bboxParam = "&BBOX={$minX},{$minY},{$maxX},{$maxY}";
+            } else {
+                $bboxParam = "&BBOX={$minY},{$minX},{$maxY},{$maxX}";
+                $changeAxis = true;
+            }
 
             $url = strstr($layer['url'], '&BBOX', true);
-            $url .= $bbox;
+            $url .= $bboxParam;
 
             $logger->debug("Print Overview Request Nr.: " . $i . ' ' . $url);
             $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
 
-            if ($im !== null) {
+            if ($im) {
                 $imageName = tempnam($this->tempdir, 'mb_print');
                 imagesavealpha($im, true);
                 imagepng($im, $imageName);
