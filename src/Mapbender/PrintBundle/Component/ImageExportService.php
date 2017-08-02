@@ -76,9 +76,7 @@ class ImageExportService
                 continue;
             }
             $baseUrl = strstr($layer['url'], '&WIDTH', true);
-            $width = '&WIDTH=' . $this->data['width'];
-            $height = '&HEIGHT=' . $this->data['height'];
-            $this->mapRequests[$i] = $baseUrl . $width . $height;
+            $this->mapRequests[$i] = $baseUrl;
         }
 
         if(isset($this->data['vectorLayers'])){
@@ -103,14 +101,15 @@ class ImageExportService
         foreach ($this->mapRequests as $k => $url) {
             $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
 
-            $mapRequestResponse = $this->mapRequest($url);
+            $rawImage = $this->loadMapTile($url, $this->data['width'], $this->data['height']);
 
-            $imageName = tempnam($this->tempdir, 'mb_imgexp');
-            $temp_names[] = $imageName;
-            $rawImage = $this->serviceResponseToGdImage($imageName, $mapRequestResponse);
+            if ($rawImage) {
+                $imageName = tempnam($this->tempdir, 'mb_imgexp');
 
-            if ($rawImage !== null) {
-                $this->forceToRgba($imageName, $rawImage, $this->data['requests'][$k]['opacity']);
+                $opacity = $this->data['requests'][$k]['opacity'];
+                $rgbaImage = $this->forceToRgba($rawImage, $opacity);
+                imagepng($rgbaImage, $imageName);
+                $temp_names[] = $imageName;
                 $width = imagesx($rawImage);
                 $height = imagesy($rawImage);
             }
@@ -142,7 +141,6 @@ class ImageExportService
         foreach ($inputNames as $inputName) {
             $src = @imagecreatefrompng($inputName);
             if ($src) {
-                $src = imagecreatefrompng($inputName);
                 imagecopy($mergedImage, $src, 0, 0, 0, 0, $width, $height);
                 imagedestroy($src);
             }
@@ -155,11 +153,11 @@ class ImageExportService
      * Convert a GD image to true-color RGBA and write it back to the file
      * system.
      *
-     * @param string $imageName will be overwritten
      * @param resource $imageResource source image
      * @param float $opacity in [0;1]
+     * @return resource (GD)
      */
-    protected function forceToRgba($imageName, $imageResource, $opacity)
+    protected function forceToRgba($imageResource, $opacity)
     {
         $width = imagesx($imageResource);
         $height = imagesy($imageResource);
@@ -188,7 +186,7 @@ class ImageExportService
                 }
             }
         }
-        imagepng($image, $imageName);
+        return $image;
     }
 
     /**
@@ -268,36 +266,13 @@ class ImageExportService
     /**
      * Converts a http response to a GD image, respecting the mimetype.
      *
-     * @param string $storagePath for temp file storage
      * @param Response $response
      * @return resource|null GD image or null on failure
      */
-    protected function serviceResponseToGdImage($storagePath, $response)
+    protected function serviceResponseToGdImage($response)
     {
-        file_put_contents($storagePath, $response->getContent());
-        $rawContentType = trim($response->headers->get('content-type'));
-        $contentTypeMatches = array();
-        if (preg_match('#^\s*(image/[\w]+)#', $rawContentType, $contentTypeMatches) && !empty($contentTypeMatches[1])) {
-            $matchedContentType = $contentTypeMatches[1];
-        } else {
-            $matchedContentType = $rawContentType;
-        }
-        switch ($matchedContentType) {
-            case "image/png":
-                return imagecreatefrompng($storagePath);
-                break;
-            case "image/jpeg":
-                return imagecreatefromjpeg($storagePath);
-                break;
-            case "image/gif":
-                return imagecreatefromgif($storagePath);
-                break;
-            default:
-                $message = 'Unhandled mimetype ' . var_export($matchedContentType, true);
-                $this->getLogger()->warning($message);
-                // throw new \RuntimeException($message);
-                return null;
-        }
+        $resource = imagecreatefromstring($response->getContent());
+        return $resource;
     }
 
     /**
@@ -599,5 +574,28 @@ class ImageExportService
     protected function getStyle($geometry)
     {
         return $geometry['style'];
+    }
+
+    /**
+     *
+     * @param $baseUrl
+     * @param integer $width
+     * @param integer $height
+     * @return resource (GD)
+     */
+    protected function loadMapTile($baseUrl, $width, $height)
+    {
+        if (false === strpos($baseUrl, '?')) {
+            $baseUrl = "{$baseUrl}?";
+        }
+        $fullUrl = "{$baseUrl}&WIDTH=" . intval($width) . "&HEIGHT=" . intval($height);
+        $response = $this->mapRequest($fullUrl);
+        $resource = $this->serviceResponseToGdImage($response);
+        if (!$resource) {
+            $this->getLogger()->error("ERROR! PrintRequest failed: {$fullUrl} {$response->getStatusCode()}");
+            return null;
+        }
+
+        return $resource;
     }
 }

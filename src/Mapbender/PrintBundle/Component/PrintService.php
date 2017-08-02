@@ -239,26 +239,20 @@ class PrintService extends ImageExportService
         foreach ($this->mapRequests as $i => $url) {
             $this->getLogger()->debug("Print Request Nr.: " . $i . ' ' . $url);
 
-            $mapRequestResponse = $this->mapRequest($url);
+            $rawImage = $this->loadMapTile($url, $width, $height);
 
             $imageName    = tempnam($this->tempDir, 'mb_print');
-            $imageNames[] = $imageName;
-            $rawImage = $this->serviceResponseToGdImage($imageName, $mapRequestResponse);
 
             if (!$rawImage) {
-                $this->getLogger()->debug("ERROR! PrintRequest failed: " . $url);
-                $this->getLogger()->debug($mapRequestResponse->getContent());
-                print_r('an error has occurred. see log for more details <br>');
-                print_r($mapRequestResponse->getContent());
                 foreach ($imageNames as $i => $imageName) {
                     unlink($imageName);
                 }
                 exit;
             }
-
-            if ($rawImage !== null) {
-                $this->forceToRgba($imageName, $rawImage, $this->data['layers'][$i]['opacity']);
-            }
+            $opacity = $this->data['layers'][$i]['opacity'];
+            $rgbaImage = $this->forceToRgba($rawImage, $opacity);
+            imagepng($rgbaImage, $imageName);
+            $imageNames[] = $imageName;
         }
         return $imageNames;
     }
@@ -448,8 +442,6 @@ class PrintService extends ImageExportService
         $quality = $this->data['quality'];
         $ovImageWidth = round($this->conf['overview']['width'] / 25.4 * $quality);
         $ovImageHeight = round($this->conf['overview']['height'] / 25.4 * $quality);
-        $width = '&WIDTH=' . $ovImageWidth;
-        $height = '&HEIGHT=' . $ovImageHeight;
 
         $changeAxis = false;
 
@@ -478,18 +470,16 @@ class PrintService extends ImageExportService
             $bbox = '&BBOX=' . $minX . ',' . $minY . ',' . $maxX . ',' . $maxY;
 
             $url = strstr($layer['url'], '&BBOX', true);
-            $url .= $bbox . $width . $height;
+            $url .= $bbox;
 
             $logger->debug("Print Overview Request Nr.: " . $i . ' ' . $url);
-
-            $overviewRequestResponse = $this->mapRequest($url);
-            $imageName = tempnam($this->tempdir, 'mb_print');
-            $tempNames[] = $imageName;
-            $im = $this->serviceResponseToGdImage($imageName, $overviewRequestResponse);
+            $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
 
             if ($im !== null) {
+                $imageName = tempnam($this->tempdir, 'mb_print');
                 imagesavealpha($im, true);
                 imagepng($im, $imageName);
+                $tempNames[] = $imageName;
             }
         }
 
@@ -931,8 +921,8 @@ class PrintService extends ImageExportService
                     continue;
                 }
 
-                $image = $this->getLegendImage($legendUrl);
-                if (false === @imagecreatefromstring(@file_get_contents($image))) {
+                $image = $this->downloadLegendImage($legendUrl);
+                if (!$image) {
                     continue;
                 }
                 $size  = getimagesize($image);
@@ -1039,15 +1029,23 @@ class PrintService extends ImageExportService
     }
 
 
-    private function getLegendImage($url)
+    /**
+     * @param string $url
+     * @return string path to created local copy
+     */
+    private function downloadLegendImage($url)
     {
         $response = $this->mapRequest($url);
         $imagename  = tempnam($this->tempdir, 'mb_printlegend');
-        file_put_contents($imagename, $response->getContent());
-        return $imagename;
+        $res = @imagecreatefromstring($response->getContent());
+        if ($res) {
+            file_put_contents($imagename, $response->getContent());
+            imagedestroy($res);
+            return $imagename;
+        } else {
+            return null;
+        }
     }
-
-
 
     /**
      * @param float $rw_x
