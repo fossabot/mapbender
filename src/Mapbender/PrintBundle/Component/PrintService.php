@@ -463,7 +463,7 @@ class PrintService extends ImageExportService
             $centerx = $this->data['center']['x'];
             $centery = $this->data['center']['y'];
 
-            if ($layer['changeAxis']){
+            if (!empty($layer['changeAxis'])) {
                 $ovWidth = $this->conf['overview']['height'] * $layer['scale'] / 1000;
                 $ovHeight = $this->conf['overview']['width'] * $layer['scale'] / 1000;
                 $centerx = $this->data['center']['y'];
@@ -918,6 +918,8 @@ class PrintService extends ImageExportService
           if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
              $this->addLegendPageImage();
           }
+          $xStartPosition = 0;
+          $yStartPosition = 0;
         }
 
         foreach ($this->data['legends'] as $idx => $legendArray) {
@@ -964,7 +966,7 @@ class PrintService extends ImageExportService
                             $x = 5;
                             $y = 10;
                             $legendConf = false;
-                            if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
+                            if (!empty($this->conf['legendpage_image'])) {
                                $this->addLegendPageImage();
                             }
                         }
@@ -973,7 +975,7 @@ class PrintService extends ImageExportService
                             $x = 5;
                             $y = 10;
                             $legendConf = false;
-                            if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
+                            if (!empty($this->conf['legendpage_image'])) {
                                $this->addLegendPageImage();
                             }
                     }
@@ -1003,7 +1005,7 @@ class PrintService extends ImageExportService
                             $height = $this->pdf->getHeight();
                             $width = $this->pdf->getWidth();
                             $legendConf = false;
-                            if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
+                            if (!empty($this->conf['legendpage_image'])) {
                                $this->addLegendPageImage();
                             }
                         }
@@ -1023,7 +1025,7 @@ class PrintService extends ImageExportService
                           $this->pdf->addPage('P');
                           $x = 5;
                           $y = 10;
-                            if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
+                            if (!empty($this->conf['legendpage_image'])) {
                                $this->addLegendPageImage();
                             }
                       }
