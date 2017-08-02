@@ -221,7 +221,7 @@ class ImageExportService
         file_put_contents($storagePath, $response->getContent());
         $rawContentType = trim($response->headers->get('content-type'));
         $contentTypeMatches = array();
-        if (preg_match('#^\s*(image/[\w+])#', $rawContentType, $contentTypeMatches) && !empty($contentTypeMatches[1])) {
+        if (preg_match('#^\s*(image/[\w]+)#', $rawContentType, $contentTypeMatches) && !empty($contentTypeMatches[1])) {
             $matchedContentType = $contentTypeMatches[1];
         } else {
             $matchedContentType = $rawContentType;
