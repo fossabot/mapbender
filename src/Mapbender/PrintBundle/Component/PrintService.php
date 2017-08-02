@@ -51,11 +51,7 @@ class PrintService extends ImageExportService
 
     private function setup($data)
     {
-        // get user
-        /** @var SecurityContext $securityContext */
-        $securityContext = $this->container->get('security.context');
-        $token           = $securityContext->getToken();
-        $this->user      = $token->getUser();
+        $this->user      = $this->getUser();
 
         // data from client
         $this->data = $data;
@@ -81,7 +77,7 @@ class PrintService extends ImageExportService
             $centery = $data['center']['y'];
 
             // switch axis for some EPSG if WMS Version 1.3.0
-            if ($layer['changeAxis']){
+            if (!empty($layer['changeAxis'])){
                 $extentWidth = $data['extent']['height'];
                 $extentHeight = $data['extent']['width'];
                 $centerx = $data['center']['y'];
@@ -624,7 +620,7 @@ class PrintService extends ImageExportService
 
     private function addDynamicImage()
     {
-        if($this->user == 'anon.'){
+        if (!$this->user || $this->user == 'anon.') {
             return;
         }
 
@@ -650,7 +646,7 @@ class PrintService extends ImageExportService
 
     private function addDynamicText()
     {
-        if($this->user == 'anon.'){
+        if (!$this->user || $this->user == 'anon.'){
             return;
         }
 
@@ -1104,7 +1100,7 @@ class PrintService extends ImageExportService
 
         $legendpageImage = $this->resourceDir . '/images/' . 'legendpage_image'. '.png';
 
-        if($this->user == 'anon.'){
+        if (!$this->user || $this->user == 'anon.') {
             $legendpageImage = $this->resourceDir . '/images/' . 'legendpage_image'. '.png';
         }else{
           $groups = $this->user->getGroups();
@@ -1189,6 +1185,21 @@ class PrintService extends ImageExportService
             return intval($this->data['quality']);
         } else {
             return parent::getQualityDpi();
+        }
+    }
+
+    /**
+     * @return mixed|null
+     */
+    protected function getUser()
+    {
+        /** @var SecurityContext $securityContext */
+        $securityContext = $this->container->get('security.context');
+        $token           = $securityContext->getToken();
+        if ($token) {
+            return $token->getUser();
+        } else {
+            return null;
         }
     }
 }
