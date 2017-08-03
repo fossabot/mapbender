@@ -28,6 +28,8 @@ class PrintService extends ImageExportService
     protected $neededImageWidth;
     protected $neededImageHeight;
 
+    protected $tempFilePrefix = 'mb_print';
+
     /**
      * @var array Default geometry style
      */
@@ -172,7 +174,7 @@ class PrintService extends ImageExportService
         $height = $this->imageHeight;
         $imageNames = $this->getImages($width, $height);
 
-        $this->finalImageName = tempnam($this->tempDir, 'mb_print_final');
+        $this->finalImageName = $this->generateTempName('_final');
         $this->mergeImages($this->finalImageName, $imageNames, $width, $height);
 
         //draw features
@@ -190,7 +192,7 @@ class PrintService extends ImageExportService
         $imageNames = $this->getImages($neededImageWidth,$neededImageHeight);
 
         // create temp merged image
-        $tempImageName = tempnam($this->tempDir, 'mb_print_temp');
+        $tempImageName = $this->generateTempName();
         $this->mergeImages($tempImageName, $imageNames, $neededImageWidth, $neededImageHeight);
 
         // draw features
@@ -203,7 +205,7 @@ class PrintService extends ImageExportService
         $rotatedImage = imagerotate($tempImage2, $rotation, $transColor);
         imagealphablending($rotatedImage, false);
         imagesavealpha($rotatedImage, true);
-        $rotatedImageName = tempnam($this->tempDir, 'mb_print_rotated');
+        $rotatedImageName = $this->generateTempName('_rotated');
         imagepng($rotatedImage, $rotatedImageName);
         unlink($tempImageName);
         unlink($rotatedImageName);
@@ -222,7 +224,7 @@ class PrintService extends ImageExportService
         imagecopy($clippedImage, $rotatedImage, 0, 0, $newx, $newy,
             $imageWidth, $imageHeight);
 
-        $this->finalImageName = tempnam($this->tempDir, 'mb_print_final');
+        $this->finalImageName = $this->generateTempName('_final');
         imagepng($clippedImage, $this->finalImageName);
     }
 
@@ -241,7 +243,7 @@ class PrintService extends ImageExportService
 
             $rawImage = $this->loadMapTile($url, $width, $height);
 
-            $imageName    = tempnam($this->tempDir, 'mb_print');
+            $imageName    = $this->generateTempName();
 
             if (!$rawImage) {
                 foreach ($imageNames as $i => $imageName) {
@@ -407,7 +409,7 @@ class PrintService extends ImageExportService
             $image = imagecreatefrompng($northarrow);
             $transColor = imagecolorallocatealpha($image, 255, 255, 255, 0);
             $rotatedImage = imagerotate($image, $rotation, $transColor);
-            $rotatedImageName = tempnam($this->tempdir, 'mb_northarrow');
+            $rotatedImageName = $this->generateTempName('_northarrow');
             imagepng($rotatedImage, $rotatedImageName);
 
             if ($rotation == 90 || $rotation == 270) {
@@ -473,7 +475,7 @@ class PrintService extends ImageExportService
             $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
 
             if ($im) {
-                $imageName = tempnam($this->tempdir, 'mb_print');
+                $imageName = $this->generateTempName();
                 imagesavealpha($im, true);
                 imagepng($im, $imageName);
                 $tempNames[] = $imageName;
@@ -481,7 +483,7 @@ class PrintService extends ImageExportService
         }
 
         // create final merged image
-        $finalImageName = tempnam($this->tempdir, 'mb_print_merged');
+        $finalImageName = $this->generateTempName('_merged');
         $this->mergeImages($finalImageName, $tempNames, $ovImageWidth, $ovImageHeight);
 
         $image = imagecreatefrompng($finalImageName);
@@ -1033,7 +1035,7 @@ class PrintService extends ImageExportService
     private function downloadLegendImage($url)
     {
         $response = $this->mapRequest($url);
-        $imagename  = tempnam($this->tempdir, 'mb_printlegend');
+        $imagename  = $this->generateTempName('_legend');
         $res = @imagecreatefromstring($response->getContent());
         if ($res) {
             file_put_contents($imagename, $response->getContent());

@@ -31,6 +31,8 @@ class ImageExportService
     /** @var string */
     protected $resourceDir;
 
+    protected $tempFilePrefix = 'mb_imgexp';
+
     public function __construct($container)
     {
         $this->container = $container;
@@ -104,7 +106,7 @@ class ImageExportService
             $rawImage = $this->loadMapTile($url, $this->data['width'], $this->data['height']);
 
             if ($rawImage) {
-                $imageName = tempnam($this->tempdir, 'mb_imgexp');
+                $imageName = $this->generateTempName();
 
                 $opacity = $this->data['requests'][$k]['opacity'];
                 $rgbaImage = $this->forceToRgba($rawImage, $opacity);
@@ -114,7 +116,7 @@ class ImageExportService
                 $height = imagesy($rawImage);
             }
         }
-        $finalImageName = tempnam($this->tempdir, 'mb_imgexp_merged');
+        $finalImageName = $this->generateTempName('_merged');
         $this->mergeImages($finalImageName, $temp_names, $width, $height);
         if (isset($this->data['vectorLayers'])) {
             $this->drawFeatures($finalImageName);
@@ -597,5 +599,17 @@ class ImageExportService
         }
 
         return $resource;
+    }
+
+    /**
+     * Generate a semi-random name for a temporary file.
+     *
+     * @param string|null $addPrefix will be concatenated with class-specific prefix
+     * @return string absolute filesystem path
+     */
+    protected function generateTempName($addPrefix = null)
+    {
+        $prefix = "{$this->tempFilePrefix}{$addPrefix}";
+        return tempnam($this->tempdir, $prefix);
     }
 }
