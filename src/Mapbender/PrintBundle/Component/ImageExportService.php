@@ -144,23 +144,24 @@ class ImageExportService
      */
     protected function getImages($layerSpecs, $width, $height)
     {
-        $temp_names = array();
+        $mergedImage = imagecreatetruecolor($width, $height);
+        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
+        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
         foreach ($layerSpecs as $i => $layerSpec) {
             $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $layerSpec['url']);
 
             try {
                 $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
-                $imageName = $this->generateTempName();
-                $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
-                imagedestroy($rawImage);
-                imagepng($rgbaImage, $imageName);
-                $temp_names[] = $imageName;
-                imagedestroy($rgbaImage);
             } catch (\Exception $e) {
                 // ignore missing layer
+                continue;
             }
+            $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
+            imagedestroy($rawImage);
+            imagecopy($mergedImage, $rgbaImage, 0, 0, 0, 0, $width, $height);
+            imagedestroy($rgbaImage);
         }
-        return $this->mergeImages($temp_names, $width, $height);
+        return $mergedImage;
     }
 
     /**
@@ -175,7 +176,6 @@ class ImageExportService
      */
     protected function mergeImages($inputNames, $width, $height)
     {
-        // create final merged image
         $mergedImage = imagecreatetruecolor($width, $height);
         $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
         imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
