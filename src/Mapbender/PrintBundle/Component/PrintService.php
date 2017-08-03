@@ -135,10 +135,11 @@ class PrintService extends ImageExportService
                 }
             }
 
-            $this->mapRequests[$i] = $request;
+            $this->mapRequests[$i] = array(
+                'url'     => $request,
+                'opacity' => $layer['opacity'],
+            );
         }
-
-
     }
 
     /**
@@ -175,7 +176,7 @@ class PrintService extends ImageExportService
     {
         $width = $this->imageWidth;
         $height = $this->imageHeight;
-        $imageResource = $this->getImages($width, $height);
+        $imageResource = $this->getImages($this->mapRequests, $width, $height);
 
         //draw features
         $this->drawFeatures($imageResource);
@@ -197,7 +198,7 @@ class PrintService extends ImageExportService
         $imageHeight = $this->imageHeight;
 
         // create temp unrotated merged image
-        $tempImage = $this->getImages($neededImageWidth, $neededImageHeight);
+        $tempImage = $this->getImages($this->mapRequests, $neededImageWidth, $neededImageHeight);
         $this->drawFeatures($tempImage);
 
         // rotate temp image
@@ -226,38 +227,6 @@ class PrintService extends ImageExportService
         $resultPath = $this->generateTempName('_final');
         imagepng($clippedImage, $resultPath);
         return $resultPath;
-    }
-
-    /**
-     * Collect WMS tiles and flatten them into a single image
-     *
-     * @param integer $width in pixels
-     * @param integer $height in pixels
-     * @return resource GD image
-     */
-    private function getImages($width, $height)
-    {
-        $imageNames    = array();
-        foreach ($this->mapRequests as $i => $url) {
-            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $url);
-
-            $rawImage = $this->loadMapTile($url, $width, $height);
-
-            if ($rawImage) {
-                $imageName = $this->generateTempName();
-
-                $opacity = $this->data['layers'][$i]['opacity'];
-                $rgbaImage = $this->forceToRgba($rawImage, $opacity);
-                imagepng($rgbaImage, $imageName);
-                $imageNames[] = $imageName;
-            } else {
-                foreach ($imageNames as $imageName) {
-                    unlink($imageName);
-                }
-                exit;
-            }
-        }
-        return $this->mergeImages($imageNames, $width, $height);
     }
 
     /**

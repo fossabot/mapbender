@@ -80,7 +80,11 @@ class ImageExportService
                 continue;
             }
             $baseUrl = strstr($layer['url'], '&WIDTH', true);
-            $this->mapRequests[$i] = $baseUrl;
+
+            $this->mapRequests[$i] = array(
+                'url'     => $baseUrl,
+                'opacity' => $layer['opacity'],
+            );
         }
 
         if(isset($this->data['vectorLayers'])){
@@ -89,7 +93,7 @@ class ImageExportService
             }
         }
 
-        $imageResource = $this->getImages($this->data['width'], $this->data['height']);
+        $imageResource = $this->getImages($this->mapRequests, $this->data['width'], $this->data['height']);
         if (isset($this->data['vectorLayers'])) {
             $this->drawFeatures($imageResource);
         }
@@ -100,25 +104,25 @@ class ImageExportService
     }
 
     /**
-     * Collect and merge WMS tiles and vector layers into a PNG file.
+     * Collect WMS tiles and flatten them into a single image.
      *
+     * @param array[] $layerSpecs each entry should contain values for keys url, opacity
      * @param integer $width in pixels
      * @param integer $height in pixels
      * @return resource GD image
      */
-    private function getImages($width, $height)
+    protected function getImages($layerSpecs, $width, $height)
     {
         $temp_names = array();
-        foreach ($this->mapRequests as $i => $url) {
-            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $url);
+        foreach ($layerSpecs as $i => $layerSpec) {
+            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $layerSpec['url']);
 
-            $rawImage = $this->loadMapTile($url, $width, $height);
+            $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
 
             if ($rawImage) {
                 $imageName = $this->generateTempName();
 
-                $opacity = $this->data['requests'][$i]['opacity'];
-                $rgbaImage = $this->forceToRgba($rawImage, $opacity);
+                $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
                 imagepng($rgbaImage, $imageName);
                 $temp_names[] = $imageName;
             }
