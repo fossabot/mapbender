@@ -32,6 +32,7 @@ class ImageExportService
     protected $resourceDir;
 
     protected $tempFilePrefix = 'mb_imgexp';
+    protected $logPrefix;
 
     public function __construct($container)
     {
@@ -47,6 +48,7 @@ class ImageExportService
             $this->urlHostPath = null;
         }
         $this->resourceDir = $this->container->getParameter('kernel.root_dir') . '/Resources/MapbenderPrintBundle';
+        $this->logPrefix = implode('', array_slice(explode('\\', get_class($this)), -1));
         $this->reset();
     }
 
@@ -87,7 +89,11 @@ class ImageExportService
             }
         }
 
-        $imagePath = $this->getImages();
+        $imagePath = $this->generateTempName('_final');
+        $this->getImages($imagePath, $this->data['width'], $this->data['height']);
+        if (isset($this->data['vectorLayers'])) {
+            $this->drawFeatures($imagePath);
+        }
         $this->emitImageToBrowser($imagePath);
         unlink($imagePath);
     }
@@ -95,33 +101,28 @@ class ImageExportService
     /**
      * Collect and merge WMS tiles and vector layers into a PNG file.
      *
-     * @return string path to merged PNG file
+     * @param string $targetPath merged PNG will be stored here
+     * @param integer $width in pixels
+     * @param integer $height in pixels
      */
-    private function getImages()
+    private function getImages($targetPath, $width, $height)
     {
         $temp_names = array();
-        foreach ($this->mapRequests as $k => $url) {
-            $this->getLogger()->debug("Image Export Request Nr.: " . $k . ' ' . $url);
+        foreach ($this->mapRequests as $i => $url) {
+            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $url);
 
-            $rawImage = $this->loadMapTile($url, $this->data['width'], $this->data['height']);
+            $rawImage = $this->loadMapTile($url, $width, $height);
 
             if ($rawImage) {
                 $imageName = $this->generateTempName();
 
-                $opacity = $this->data['requests'][$k]['opacity'];
+                $opacity = $this->data['requests'][$i]['opacity'];
                 $rgbaImage = $this->forceToRgba($rawImage, $opacity);
                 imagepng($rgbaImage, $imageName);
                 $temp_names[] = $imageName;
-                $width = imagesx($rawImage);
-                $height = imagesy($rawImage);
             }
         }
-        $finalImageName = $this->generateTempName('_merged');
-        $this->mergeImages($finalImageName, $temp_names, $width, $height);
-        if (isset($this->data['vectorLayers'])) {
-            $this->drawFeatures($finalImageName);
-        }
-        return $finalImageName;
+        $this->mergeImages($targetPath, $temp_names, $width, $height);
     }
 
     /**
@@ -594,7 +595,7 @@ class ImageExportService
         $response = $this->mapRequest($fullUrl);
         $resource = $this->serviceResponseToGdImage($response);
         if (!$resource) {
-            $this->getLogger()->error("ERROR! PrintRequest failed: {$fullUrl} {$response->getStatusCode()}");
+            $this->getLogger()->error("ERROR! {$this->logPrefix} request failed: {$fullUrl} {$response->getStatusCode()}");
             return null;
         }
 

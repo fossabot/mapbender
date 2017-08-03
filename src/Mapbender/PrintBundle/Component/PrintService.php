@@ -172,13 +172,11 @@ class PrintService extends ImageExportService
     {
         $width = $this->imageWidth;
         $height = $this->imageHeight;
-        $imageNames = $this->getImages($width, $height);
-
         $this->finalImageName = $this->generateTempName('_final');
-        $this->mergeImages($this->finalImageName, $imageNames, $width, $height);
+        $this->getImages($this->finalImageName, $width, $height);
 
         //draw features
-        $this->drawFeatures();
+        $this->drawFeatures($this->finalImageName);
     }
 
     private function createFinalRotatedMapImage()
@@ -189,15 +187,13 @@ class PrintService extends ImageExportService
         $imageWidth = $this->imageWidth;
         $imageHeight = $this->imageHeight;
 
-        $imageNames = $this->getImages($neededImageWidth,$neededImageHeight);
-
-        // create temp merged image
+        // create temp unrotated merged image
         $tempImageName = $this->generateTempName();
-        $this->mergeImages($tempImageName, $imageNames, $neededImageWidth, $neededImageHeight);
+        $this->getImages($tempImageName, $neededImageWidth, $neededImageHeight);
 
         // draw features
         $this->finalImageName = $tempImageName;
-        $this->drawFeatures();
+        $this->drawFeatures($this->finalImageName);
 
         // rotate temp image
         $tempImage2 = imagecreatefrompng($tempImageName);
@@ -231,32 +227,33 @@ class PrintService extends ImageExportService
     /**
      * Collect WMS tiles and store them as separate PNG files.
      *
-     * @param $width
-     * @param $height
-     * @return string[] paths to individual (unmerged) image files
+     * @param string $targetPath merged PNG will be stored here
+     * @param integer $width in pixels
+     * @param integer $height in pixels
      */
-    private function getImages($width, $height)
+    private function getImages($targetPath, $width, $height)
     {
         $imageNames    = array();
         foreach ($this->mapRequests as $i => $url) {
-            $this->getLogger()->debug("Print Request Nr.: " . $i . ' ' . $url);
+            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $url);
 
             $rawImage = $this->loadMapTile($url, $width, $height);
 
-            $imageName    = $this->generateTempName();
+            if ($rawImage) {
+                $imageName = $this->generateTempName();
 
-            if (!$rawImage) {
-                foreach ($imageNames as $i => $imageName) {
+                $opacity = $this->data['layers'][$i]['opacity'];
+                $rgbaImage = $this->forceToRgba($rawImage, $opacity);
+                imagepng($rgbaImage, $imageName);
+                $imageNames[] = $imageName;
+            } else {
+                foreach ($imageNames as $imageName) {
                     unlink($imageName);
                 }
                 exit;
             }
-            $opacity = $this->data['layers'][$i]['opacity'];
-            $rgbaImage = $this->forceToRgba($rawImage, $opacity);
-            imagepng($rgbaImage, $imageName);
-            $imageNames[] = $imageName;
         }
-        return $imageNames;
+        $this->mergeImages($targetPath, $imageNames, $width, $height);
     }
 
     private function buildPdf()
@@ -865,9 +862,9 @@ class PrintService extends ImageExportService
     }
 
 
-    private function drawFeatures()
+    private function drawFeatures($imagePath)
     {
-        $image = imagecreatefrompng($this->finalImageName);
+        $image = imagecreatefrompng($imagePath);
         imagesavealpha($image, true);
         imagealphablending($image, true);
 
@@ -881,7 +878,7 @@ class PrintService extends ImageExportService
                 $this->$renderMethodName($geometry, $image);
             }
         }
-        imagepng($image, $this->finalImageName);
+        imagepng($image, $imagePath);
     }
 
     private function addLegend()
