@@ -115,20 +115,25 @@ class ImageExportService
             );
         }
 
-        if(isset($this->data['vectorLayers'])){
-            foreach ($this->data['vectorLayers'] as $idx => $layer){
-                $this->data['vectorLayers'][$idx] = json_decode($this->data['vectorLayers'][$idx], true);
-            }
-        }
 
-        $imageResource = $this->getImages($this->mapRequests, $this->data['width'], $this->data['height']);
-        if (isset($this->data['vectorLayers'])) {
-            $this->drawFeatures($imageResource);
-        }
+        $imageResource = $this->buildMainMapImage();
         $imagePath = $this->generateTempName('_final');
         imagepng($imageResource, $imagePath);
         $this->emitImageToBrowser($imagePath);
         unlink($imagePath);
+    }
+
+    /**
+     * Build the combined main map image, WMS + vector layers
+     * @return resource GD image
+     */
+    private function buildMainMapImage()
+    {
+        $width = $this->mainMapCanvas['pixelWidth'];
+        $height = $this->mainMapCanvas['pixelHeight'];
+        $imageResource = $this->getImages($this->mapRequests, $width, $height);
+        $this->drawFeatures($imageResource);
+        return $imageResource;
     }
 
     /**
@@ -347,7 +352,13 @@ class ImageExportService
      */
     protected function getGeometryLayers()
     {
-        return $this->data['vectorLayers'];
+        $geoLayers = array();
+        if (isset($this->data['vectorLayers'])){
+            foreach ($this->data['vectorLayers'] as $idx => $layer){
+                $vectorLayers[] = json_decode($this->data['vectorLayers'][$idx], true);
+            }
+        }
+        return $geoLayers;
     }
 
     /**

@@ -38,10 +38,13 @@ class PrintService extends ImageExportService
         $this->setup($data);
 
         if ($data['rotation'] == 0) {
-            $mapImagePath = $this->createFinalMapImage();
+            $mainMapImage = $this->buildMainMapImage();
         } else {
-            $mapImagePath = $this->createFinalRotatedMapImage();
+            $mainMapImage = $this->createFinalRotatedMapImage();
         }
+
+        $mapImagePath = $this->generateTempName('_final');
+        imagepng($mainMapImage, $mapImagePath);
 
         return $this->buildPdf($mapImagePath);
     }
@@ -177,17 +180,18 @@ class PrintService extends ImageExportService
 
     /**
      *
-     * @return string absolute path to resulting PNG file
+     * @todo: this function can be removed (parent method is identical) once all
+     *        private draw* methods are gone
+     *
+     * @return resource GD image
      */
-    private function createFinalMapImage()
+    private function buildMainMapImage()
     {
-        $imageResource = $this->getImages($this->mapRequests, $this->imageWidth, $this->imageHeight);
-
-        //draw features
+        $width = $this->mainMapCanvas['pixelWidth'];
+        $height = $this->mainMapCanvas['pixelHeight'];
+        $imageResource = $this->getImages($this->mapRequests, $width, $height);
         $this->drawFeatures($imageResource);
-        $imagePath = $this->generateTempName('_final');
-        imagepng($imageResource, $imagePath);
-        return $imagePath;
+        return $imageResource;
     }
 
     /**
@@ -196,17 +200,12 @@ class PrintService extends ImageExportService
      */
     private function createFinalRotatedMapImage()
     {
-        $rotation = $this->rotation;
-        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
-        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
-        $imageWidth = $this->imageWidth;
-        $imageHeight = $this->imageHeight;
-
-        // create temp unrotated merged image
-        $tempImage = $this->getImages($this->mapRequests, $neededImageWidth, $neededImageHeight);
-        $this->drawFeatures($tempImage);
+        $tempImage = $this->buildMainMapImage();
 
         // rotate temp image
+        $rotation = $this->rotation;
+        $imageWidth = $this->imageWidth;
+        $imageHeight = $this->imageHeight;
         $transColor = imagecolorallocatealpha($tempImage, 255, 255, 255, 127);
         $rotatedImage = imagerotate($tempImage, $rotation, $transColor);
         imagealphablending($rotatedImage, false);
@@ -215,6 +214,8 @@ class PrintService extends ImageExportService
         imagepng($rotatedImage, $rotatedImageName);
         unlink($rotatedImageName);
 
+        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
+        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
         // clip final image from rotated
         $rotatedWidth = round(abs(sin(deg2rad($rotation)) * $neededImageHeight) +
             abs(cos(deg2rad($rotation)) * $neededImageWidth));
@@ -229,9 +230,7 @@ class PrintService extends ImageExportService
         imagecopy($clippedImage, $rotatedImage, 0, 0, $newx, $newy,
             $imageWidth, $imageHeight);
 
-        $resultPath = $this->generateTempName('_final');
-        imagepng($clippedImage, $resultPath);
-        return $resultPath;
+        return $clippedImage;
     }
 
     /**
@@ -816,6 +815,9 @@ class PrintService extends ImageExportService
     }
 
     /**
+     * @todo: this function can be removed (parent method is identical) once all
+     *        private draw* methods are gone
+     *
      * @param resource $targetImage GD image to draw on
      */
     private function drawFeatures($targetImage)
