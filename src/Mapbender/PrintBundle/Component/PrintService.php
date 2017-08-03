@@ -18,7 +18,6 @@ class PrintService extends ImageExportService
     protected $pdf;
     protected $conf;
     protected $rotation;
-    protected $finalImageName;
     protected $user;
     protected $tempDir;
     protected $imageWidth;
@@ -43,12 +42,12 @@ class PrintService extends ImageExportService
         $this->setup($data);
 
         if ($data['rotation'] == 0) {
-            $this->createFinalMapImage();
+            $mapImagePath = $this->createFinalMapImage();
         } else {
-            $this->createFinalRotatedMapImage();
+            $mapImagePath = $this->createFinalRotatedMapImage();
         }
 
-        return $this->buildPdf();
+        return $this->buildPdf($mapImagePath);
     }
 
     private function setup($data)
@@ -168,17 +167,26 @@ class PrintService extends ImageExportService
         return $url . $default;
     }
 
+    /**
+     *
+     * @return string absolute path to resulting PNG file
+     */
     private function createFinalMapImage()
     {
         $width = $this->imageWidth;
         $height = $this->imageHeight;
-        $this->finalImageName = $this->generateTempName('_final');
-        $this->getImages($this->finalImageName, $width, $height);
+        $imagePath = $this->generateTempName('_final');
+        $this->getImages($imagePath, $width, $height);
 
         //draw features
-        $this->drawFeatures($this->finalImageName);
+        $this->drawFeatures($imagePath);
+        return $imagePath;
     }
 
+    /**
+     *
+     * @return string absolute path to resulting PNG file
+     */
     private function createFinalRotatedMapImage()
     {
         $rotation = $this->rotation;
@@ -191,9 +199,7 @@ class PrintService extends ImageExportService
         $tempImageName = $this->generateTempName();
         $this->getImages($tempImageName, $neededImageWidth, $neededImageHeight);
 
-        // draw features
-        $this->finalImageName = $tempImageName;
-        $this->drawFeatures($this->finalImageName);
+        $this->drawFeatures($tempImageName);
 
         // rotate temp image
         $tempImage2 = imagecreatefrompng($tempImageName);
@@ -220,8 +226,9 @@ class PrintService extends ImageExportService
         imagecopy($clippedImage, $rotatedImage, 0, 0, $newx, $newy,
             $imageWidth, $imageHeight);
 
-        $this->finalImageName = $this->generateTempName('_final');
-        imagepng($clippedImage, $this->finalImageName);
+        $resultPath = $this->generateTempName('_final');
+        imagepng($clippedImage, $resultPath);
+        return $resultPath;
     }
 
     /**
@@ -256,7 +263,12 @@ class PrintService extends ImageExportService
         $this->mergeImages($targetPath, $imageNames, $width, $height);
     }
 
-    private function buildPdf()
+    /**
+     * @param string $mapImagePath to merged png file
+     * @param bool $deleteMapImage to delete file at mapImagePath after loading it (default true)
+     * @return string binary PDF output
+     */
+    private function buildPdf($mapImagePath, $deleteMapImage=true)
     {
         // set format
         if($this->conf['orientation'] == 'portrait'){
@@ -287,11 +299,13 @@ class PrintService extends ImageExportService
         $mapWidth = $this->conf['map']['width'];
         $mapHeight = $this->conf['map']['height'];
 
-        $pdf->Image($this->finalImageName, $mapUlX, $mapUlY,
+        $pdf->Image($mapImagePath, $mapUlX, $mapUlY,
                 $mapWidth, $mapHeight, 'png', '', false, 0, 5, -1 * 0);
         // add map border (default is black)
         $pdf->Rect($mapUlX, $mapUlY, $mapWidth, $mapHeight);
-        unlink($this->finalImageName);
+        if ($deleteMapImage) {
+            unlink($mapImagePath);
+        }
 
         if ($hasTransparentBg == true){
             $pdf->useTemplate($tplidx);
