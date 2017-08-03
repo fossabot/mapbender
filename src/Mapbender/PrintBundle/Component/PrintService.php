@@ -175,11 +175,12 @@ class PrintService extends ImageExportService
     {
         $width = $this->imageWidth;
         $height = $this->imageHeight;
-        $imagePath = $this->generateTempName('_final');
-        $this->getImages($imagePath, $width, $height);
+        $imageResource = $this->getImages($width, $height);
 
         //draw features
-        $this->drawFeatures($imagePath);
+        $this->drawFeatures($imageResource);
+        $imagePath = $this->generateTempName('_final');
+        imagepng($imageResource, $imagePath);
         return $imagePath;
     }
 
@@ -196,20 +197,16 @@ class PrintService extends ImageExportService
         $imageHeight = $this->imageHeight;
 
         // create temp unrotated merged image
-        $tempImageName = $this->generateTempName();
-        $this->getImages($tempImageName, $neededImageWidth, $neededImageHeight);
-
-        $this->drawFeatures($tempImageName);
+        $tempImage = $this->getImages($neededImageWidth, $neededImageHeight);
+        $this->drawFeatures($tempImage);
 
         // rotate temp image
-        $tempImage2 = imagecreatefrompng($tempImageName);
-        $transColor = imagecolorallocatealpha($tempImage2, 255, 255, 255, 127);
-        $rotatedImage = imagerotate($tempImage2, $rotation, $transColor);
+        $transColor = imagecolorallocatealpha($tempImage, 255, 255, 255, 127);
+        $rotatedImage = imagerotate($tempImage, $rotation, $transColor);
         imagealphablending($rotatedImage, false);
         imagesavealpha($rotatedImage, true);
         $rotatedImageName = $this->generateTempName('_rotated');
         imagepng($rotatedImage, $rotatedImageName);
-        unlink($tempImageName);
         unlink($rotatedImageName);
 
         // clip final image from rotated
@@ -232,13 +229,13 @@ class PrintService extends ImageExportService
     }
 
     /**
-     * Collect WMS tiles and store them as separate PNG files.
+     * Collect WMS tiles and flatten them into a single image
      *
-     * @param string $targetPath merged PNG will be stored here
      * @param integer $width in pixels
      * @param integer $height in pixels
+     * @return resource GD image
      */
-    private function getImages($targetPath, $width, $height)
+    private function getImages($width, $height)
     {
         $imageNames    = array();
         foreach ($this->mapRequests as $i => $url) {
@@ -260,7 +257,7 @@ class PrintService extends ImageExportService
                 exit;
             }
         }
-        $this->mergeImages($targetPath, $imageNames, $width, $height);
+        return $this->mergeImages($imageNames, $width, $height);
     }
 
     /**
@@ -495,9 +492,7 @@ class PrintService extends ImageExportService
 
         // create final merged image
         $finalImageName = $this->generateTempName('_merged');
-        $this->mergeImages($finalImageName, $tempNames, $ovImageWidth, $ovImageHeight);
-
-        $image = imagecreatefrompng($finalImageName);
+        $image = $this->mergeImages($tempNames, $ovImageWidth, $ovImageHeight);
 
         // add red extent rectangle
         if (!$changeAxis) {
@@ -875,24 +870,24 @@ class PrintService extends ImageExportService
         return $geoLayers;
     }
 
-
-    private function drawFeatures($imagePath)
+    /**
+     * @param resource $targetImage GD image to draw on
+     */
+    private function drawFeatures($targetImage)
     {
-        $image = imagecreatefrompng($imagePath);
-        imagesavealpha($image, true);
-        imagealphablending($image, true);
+        imagesavealpha($targetImage, true);
+        imagealphablending($targetImage, true);
 
-        foreach ($this->getGeometryLayers() as $idx => $layer) {
+        foreach ($this->getGeometryLayers() as $layer) {
             foreach ($layer['geometries'] as $geometry) {
                 $renderMethodName = 'draw' . $geometry['type'];
                 if (!method_exists($this, $renderMethodName)) {
                     continue;
                     //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
                 }
-                $this->$renderMethodName($geometry, $image);
+                $this->$renderMethodName($geometry, $targetImage);
             }
         }
-        imagepng($image, $imagePath);
     }
 
     private function addLegend()

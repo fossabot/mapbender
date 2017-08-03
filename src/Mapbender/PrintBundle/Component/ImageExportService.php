@@ -89,11 +89,12 @@ class ImageExportService
             }
         }
 
-        $imagePath = $this->generateTempName('_final');
-        $this->getImages($imagePath, $this->data['width'], $this->data['height']);
+        $imageResource = $this->getImages($this->data['width'], $this->data['height']);
         if (isset($this->data['vectorLayers'])) {
-            $this->drawFeatures($imagePath);
+            $this->drawFeatures($imageResource);
         }
+        $imagePath = $this->generateTempName('_final');
+        imagepng($imageResource, $imagePath);
         $this->emitImageToBrowser($imagePath);
         unlink($imagePath);
     }
@@ -101,11 +102,11 @@ class ImageExportService
     /**
      * Collect and merge WMS tiles and vector layers into a PNG file.
      *
-     * @param string $targetPath merged PNG will be stored here
      * @param integer $width in pixels
      * @param integer $height in pixels
+     * @return resource GD image
      */
-    private function getImages($targetPath, $width, $height)
+    private function getImages($width, $height)
     {
         $temp_names = array();
         foreach ($this->mapRequests as $i => $url) {
@@ -122,20 +123,20 @@ class ImageExportService
                 $temp_names[] = $imageName;
             }
         }
-        $this->mergeImages($targetPath, $temp_names, $width, $height);
+        return $this->mergeImages($temp_names, $width, $height);
     }
 
     /**
-     * Copy PNGs from given inputNames (in order) onto a new image of given
-     * dimensions, and store the resulting merged PNG at $outputName.
+     * Copy PNGs from given inputNames (in order) onto a new GD image of given
+     * dimensions, and return it.
      * All valid input PNGs will be deleted!
      *
-     * @param string $outputName
      * @param string[] $inputNames
      * @param integer $width
      * @param integer $height
+     * @return resource GD image
      */
-    protected function mergeImages($outputName, $inputNames, $width, $height)
+    protected function mergeImages($inputNames, $width, $height)
     {
         // create final merged image
         $mergedImage = imagecreatetruecolor($width, $height);
@@ -149,7 +150,7 @@ class ImageExportService
             }
             unlink($inputName);
         }
-        imagepng($mergedImage, $outputName);
+        return $mergedImage;
     }
 
     /**
@@ -305,23 +306,24 @@ class ImageExportService
         return $this->data['vectorLayers'];
     }
 
-    private function drawFeatures($finalImageName)
+    /**
+     * @param resource $targetImage GD image to draw on
+     */
+    private function drawFeatures($targetImage)
     {
-        $image = imagecreatefrompng($finalImageName);
-        imagesavealpha($image, true);
-        imagealphablending($image, true);
+        imagesavealpha($targetImage, true);
+        imagealphablending($targetImage, true);
 
         foreach ($this->getGeometryLayers() as $layer) {
-            foreach($layer['geometries'] as $geometry) {
+            foreach( $layer['geometries'] as $geometry) {
                 $renderMethodName = 'draw' . $geometry['type'];
-                if(!method_exists($this, $renderMethodName)) {
+                if (!method_exists($this, $renderMethodName)) {
                     continue;
                     //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
                 }
-                $this->$renderMethodName($geometry, $image);
+                $this->$renderMethodName($geometry, $targetImage);
             }
         }
-        imagepng($image, $finalImageName);
     }
 
     protected function getColor($color, $alpha, $image)
