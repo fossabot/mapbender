@@ -2,10 +2,6 @@
 namespace Mapbender\PrintBundle\Component;
 
 use Mapbender\CoreBundle\Component\SecurityContext;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\HttpKernelInterface;
-use OwsProxy3\CoreBundle\Component\ProxyQuery;
-use OwsProxy3\CoreBundle\Component\CommonProxy;
 
 /**
  * Mapbender3 Print Service.
@@ -45,6 +41,7 @@ class PrintService extends ImageExportService
 
         $mapImagePath = $this->generateTempName('_final');
         imagepng($mainMapImage, $mapImagePath);
+        imagedestroy($mainMapImage);
 
         return $this->buildPdf($mapImagePath);
     }
@@ -194,9 +191,6 @@ class PrintService extends ImageExportService
         $rotatedImage = imagerotate($tempImage, $rotation, $transColor);
         imagealphablending($rotatedImage, false);
         imagesavealpha($rotatedImage, true);
-        $rotatedImageName = $this->generateTempName('_rotated');
-        imagepng($rotatedImage, $rotatedImageName);
-        unlink($rotatedImageName);
 
         $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
         $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
@@ -375,21 +369,18 @@ class PrintService extends ImageExportService
             $transColor = imagecolorallocatealpha($image, 255, 255, 255, 0);
             $rotatedImage = imagerotate($image, $rotation, $transColor);
             $rotatedImageName = $this->generateTempName('_northarrow');
-            imagepng($rotatedImage, $rotatedImageName);
 
-            if ($rotation == 90 || $rotation == 270) {
-                //
-            } else {
-                $srcImage = imagecreatefrompng($rotatedImageName);
-                $srcSize = getimagesize($rotatedImageName);
-                $destSize = getimagesize($northarrow);
-                $x = ($srcSize[0] - $destSize[0]) / 2;
-                $y = ($srcSize[1] - $destSize[1]) / 2;
-                $destImage = imagecreatetruecolor($destSize[0], $destSize[1]);
-                imagecopy($destImage, $srcImage, 0, 0, $x, $y, $srcSize[0], $srcSize[1]);
-                imagepng($destImage, $rotatedImageName);
-            }
+            $srcSize = array(imagesx($rotatedImage), imagesy($rotatedImage));
+            $destSize = getimagesize($northarrow);
+            $x = ($srcSize[0] - $destSize[0]) / 2;
+            $y = ($srcSize[1] - $destSize[1]) / 2;
+            $destImage = imagecreatetruecolor($destSize[0], $destSize[1]);
+            imagecopy($destImage, $rotatedImage, 0, 0, $x, $y, $srcSize[0], $srcSize[1]);
+            imagepng($destImage, $rotatedImageName);
             $northarrow = $rotatedImageName;
+            imagedestroy($image);
+            imagedestroy($rotatedImage);
+            imagedestroy($destImage);
         }
 
         $this->pdf->Image($northarrow,
@@ -443,6 +434,7 @@ class PrintService extends ImageExportService
                 imagesavealpha($im, true);
                 imagepng($im, $imageName);
                 $tempNames[] = $imageName;
+                imagedestroy($im);
             } catch (\Exception $e) {
                 // ignore missing overview layer
             }
@@ -492,6 +484,7 @@ class PrintService extends ImageExportService
         imageline ( $image, $p4[0], $p4[1], $p1[0], $p1[1], $red);
 
         imagepng($image, $finalImageName);
+        imagedestroy($image);
 
         // add image to pdf
         $this->pdf->Image($finalImageName,

@@ -117,10 +117,8 @@ class ImageExportService
 
 
         $imageResource = $this->buildMainMapImage();
-        $imagePath = $this->generateTempName('_final');
-        imagepng($imageResource, $imagePath);
-        $this->emitImageToBrowser($imagePath);
-        unlink($imagePath);
+        $this->emitImageToBrowser($imageResource);
+        imagedestroy($imageResource);
     }
 
     /**
@@ -154,8 +152,10 @@ class ImageExportService
                 $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
                 $imageName = $this->generateTempName();
                 $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
+                imagedestroy($rawImage);
                 imagepng($rgbaImage, $imageName);
                 $temp_names[] = $imageName;
+                imagedestroy($rgbaImage);
             } catch (\Exception $e) {
                 // ignore missing layer
             }
@@ -329,21 +329,20 @@ class ImageExportService
     }
 
     /**
-     * @param string $imagePath
+     * @param resource $image GD image
      */
-    protected function emitImageToBrowser($imagePath)
+    protected function emitImageToBrowser($image)
     {
-        $finalImage = imagecreatefrompng($imagePath);
         if ($this->data['format'] == 'png') {
             header("Content-type: image/png");
             header("Content-Disposition: attachment; filename=export_" . date("YmdHis") . ".png");
             //header('Content-Length: ' . filesize($file));
-            imagepng($finalImage);
+            imagepng($image);
         } else {
             header("Content-type: image/jpeg");
             header("Content-Disposition: attachment; filename=export_" . date("YmdHis") . ".jpg");
             //header('Content-Length: ' . filesize($file));
-            imagejpeg($finalImage, null, 85);
+            imagejpeg($image, null, 85);
         }
     }
 
