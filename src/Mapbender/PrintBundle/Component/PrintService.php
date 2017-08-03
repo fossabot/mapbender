@@ -22,10 +22,6 @@ class PrintService extends ImageExportService
     protected $tempDir;
     protected $imageWidth;
     protected $imageHeight;
-    protected $neededExtentWidth;
-    protected $neededExtentHeight;
-    protected $neededImageWidth;
-    protected $neededImageHeight;
 
     protected $tempFilePrefix = 'mb_print';
 
@@ -96,15 +92,19 @@ class PrintService extends ImageExportService
 
                 $width = '&WIDTH=' . $this->imageWidth;
                 $height =  '&HEIGHT=' . $this->imageHeight;
+
+                $this->mainMapCanvas = array(
+                    'extent' => $data['extent'],
+                    'center' => $data['center'],
+                    'pixelWidth' => $this->imageWidth,
+                    'pixelHeight' => $this->imageHeight,
+                );
             }else{
                 // calculate needed bbox
                 $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extentHeight) +
                     abs(cos(deg2rad($rotation)) * $extentWidth);
                 $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extentWidth) +
                     abs(cos(deg2rad($rotation)) * $extentHeight);
-
-                $this->neededExtentWidth = $neededExtentWidth;
-                $this->neededExtentHeight = $neededExtentHeight;
 
                 $minX = $centerx - $neededExtentWidth * 0.5;
                 $minY = $centery - $neededExtentHeight * 0.5;
@@ -117,11 +117,18 @@ class PrintService extends ImageExportService
                 $neededImageHeight = round(abs(sin(deg2rad($rotation)) * $this->imageWidth) +
                     abs(cos(deg2rad($rotation)) * $this->imageHeight));
 
-                $this->neededImageWidth = $neededImageWidth;
-                $this->neededImageHeight = $neededImageHeight;
-
                 $width = '&WIDTH=' . $neededImageWidth;
                 $height =  '&HEIGHT=' . $neededImageHeight;
+
+                $this->mainMapCanvas = array(
+                    'extent' => array(
+                        'width' => $neededExtentWidth,
+                        'height' => $neededExtentHeight,
+                    ),
+                    'center' => $data['center'],
+                    'pixelWidth' => $neededImageWidth,
+                    'pixelHeight' => $neededImageHeight,
+                );
             }
 
             $request .= '&BBOX=' . $minX . ',' . $minY . ',' . $maxX . ',' . $maxY;
@@ -174,9 +181,7 @@ class PrintService extends ImageExportService
      */
     private function createFinalMapImage()
     {
-        $width = $this->imageWidth;
-        $height = $this->imageHeight;
-        $imageResource = $this->getImages($this->mapRequests, $width, $height);
+        $imageResource = $this->getImages($this->mapRequests, $this->imageWidth, $this->imageHeight);
 
         //draw features
         $this->drawFeatures($imageResource);
@@ -192,8 +197,8 @@ class PrintService extends ImageExportService
     private function createFinalRotatedMapImage()
     {
         $rotation = $this->rotation;
-        $neededImageWidth = $this->neededImageWidth;
-        $neededImageHeight = $this->neededImageHeight;
+        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
+        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
         $imageWidth = $this->imageWidth;
         $imageHeight = $this->imageHeight;
 
@@ -648,11 +653,7 @@ class PrintService extends ImageExportService
 
             $points = array();
             foreach($ring as $c) {
-                if($this->rotation == 0){
-                    $p = $this->realWorld2mapPos($c[0], $c[1]);
-                }else{
-                    $p = $this->realWorld2rotatedMapPos($c[0], $c[1]);
-                }
+                $p = $this->realWorld2mapPos($c[0], $c[1]);
                 $points[] = floatval($p[0]);
                 $points[] = floatval($p[1]);
             }
@@ -689,11 +690,7 @@ class PrintService extends ImageExportService
 
                 $points = array();
                 foreach($ring as $c) {
-                    if($this->rotation == 0){
-                        $p = $this->realWorld2mapPos($c[0], $c[1]);
-                    }else{
-                        $p = $this->realWorld2rotatedMapPos($c[0], $c[1]);
-                    }
+                    $p = $this->realWorld2mapPos($c[0], $c[1]);
                     $points[] = floatval($p[0]);
                     $points[] = floatval($p[1]);
                 }
@@ -734,21 +731,12 @@ class PrintService extends ImageExportService
 
         for($i = 1; $i < count($geometry['coordinates']); $i++) {
 
-            if($this->rotation == 0){
-                $from = $this->realWorld2mapPos(
-                    $geometry['coordinates'][$i - 1][0],
-                    $geometry['coordinates'][$i - 1][1]);
-                $to = $this->realWorld2mapPos(
-                    $geometry['coordinates'][$i][0],
-                    $geometry['coordinates'][$i][1]);
-            }else{
-                $from = $this->realWorld2rotatedMapPos(
-                    $geometry['coordinates'][$i - 1][0],
-                    $geometry['coordinates'][$i - 1][1]);
-                $to = $this->realWorld2rotatedMapPos(
-                    $geometry['coordinates'][$i][0],
-                    $geometry['coordinates'][$i][1]);
-            }
+            $from = $this->realWorld2mapPos(
+                $geometry['coordinates'][$i - 1][0],
+                $geometry['coordinates'][$i - 1][1]);
+            $to = $this->realWorld2mapPos(
+                $geometry['coordinates'][$i][0],
+                $geometry['coordinates'][$i][1]);
 
             imageline($image, $from[0], $from[1], $to[0], $to[1], $color);
         }
@@ -769,21 +757,12 @@ class PrintService extends ImageExportService
 
         foreach($geometry['coordinates'] as $coords) {
             for($i = 1; $i < count($coords); $i++) {
-                if($this->rotation == 0){
-                        $from = $this->realWorld2mapPos(
-                                $coords[$i - 1][0],
-                                $coords[$i - 1][1]);
-                        $to = $this->realWorld2mapPos(
-                                $coords[$i][0],
-                                $coords[$i][1]);
-                }else{
-                        $from = $this->realWorld2rotatedMapPos(
-                                $coords[$i - 1][0],
-                                $coords[$i - 1][1]);
-                        $to = $this->realWorld2rotatedMapPos(
-                                $coords[$i][0],
-                                $coords[$i][1]);
-                }
+                $from = $this->realWorld2mapPos(
+                        $coords[$i - 1][0],
+                        $coords[$i - 1][1]);
+                $to = $this->realWorld2mapPos(
+                        $coords[$i][0],
+                        $coords[$i][1]);
                 imageline($image, $from[0], $from[1], $to[0], $to[1], $color);
             }
         }
@@ -795,11 +774,7 @@ class PrintService extends ImageExportService
         $c = $geometry['coordinates'];
         $resizeFactor = $this->getResizeFactor();
 
-        if($this->rotation == 0){
-            $p = $this->realWorld2mapPos($c[0], $c[1]);
-        }else{
-            $p = $this->realWorld2rotatedMapPos($c[0], $c[1]);
-        }
+        $p = $this->realWorld2mapPos($c[0], $c[1]);
 
         if(isset($style['label'])){
             $this->drawHaloText($image, $p, 10, $style['label'], $style);
@@ -1021,33 +996,6 @@ class PrintService extends ImageExportService
         return $imageName;
     }
 
-    /**
-     * @param float $rw_x
-     * @param float $rw_y
-     * @return float[] pixel offset x / y
-     * @todo: Consolidate with both parent implementation and "realWorld2rotatedMapPos".
-     *        The incompatibility here is the only reason we have to keep the (identical)
-     *        copy-pasted copies of private drawFeatures all other draw* methods it calls.
-     */
-    private function realWorld2mapPos($rw_x, $rw_y)
-    {
-        $quality   = $this->getQualityDpi();
-        $mapWidth  = $this->data['extent']['width'];
-        $mapHeight = $this->data['extent']['height'];
-        $centerx   = $this->data['center']['x'];
-        $centery   = $this->data['center']['y'];
-        $minX      = $centerx - $mapWidth * 0.5;
-        $minY      = $centery - $mapHeight * 0.5;
-        $maxX      = $centerx + $mapWidth * 0.5;
-        $maxY      = $centery + $mapHeight * 0.5;
-        $extentx   = $maxX - $minX;
-        $extenty   = $maxY - $minY;
-        $pixPos_x  = (($rw_x - $minX) / $extentx) * round($this->conf['map']['width'] / 25.4 * $quality);
-        $pixPos_y  = (($maxY - $rw_y) / $extenty) * round($this->conf['map']['height'] / 25.4 * $quality);
-
-        return array($pixPos_x, $pixPos_y);
-    }
-
     private function addLegendPageImage()
     {
 
@@ -1087,22 +1035,6 @@ class PrintService extends ImageExportService
         $extenty  = $maxY - $minY;
         $pixPos_x = (($rw_x - $minX) / $extentx) * round($this->conf['overview']['width'] / 25.4 * $quality);
         $pixPos_y = (($maxY - $rw_y) / $extenty) * round($this->conf['overview']['height'] / 25.4 * $quality);
-
-        return array($pixPos_x, $pixPos_y);
-    }
-
-    private function realWorld2rotatedMapPos($rw_x, $rw_y)
-    {
-        $centerx  = $this->data['center']['x'];
-        $centery  = $this->data['center']['y'];
-        $minX     = $centerx - $this->neededExtentWidth * 0.5;
-        $minY     = $centery - $this->neededExtentHeight * 0.5;
-        $maxX     = $centerx + $this->neededExtentWidth * 0.5;
-        $maxY     = $centery + $this->neededExtentHeight * 0.5;
-        $extentx  = $maxX - $minX;
-        $extenty  = $maxY - $minY;
-        $pixPos_x = (($rw_x - $minX) / $extentx) * $this->neededImageWidth;
-        $pixPos_y = (($maxY - $rw_y) / $extenty) * $this->neededImageHeight;
 
         return array($pixPos_x, $pixPos_y);
     }

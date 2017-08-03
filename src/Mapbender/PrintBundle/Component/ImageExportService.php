@@ -34,6 +34,21 @@ class ImageExportService
     protected $tempFilePrefix = 'mb_imgexp';
     protected $logPrefix;
 
+    /**
+     * Here we store information about the drawing canvas (!= output sizing)
+     * This is bigger than ouptut for rotated rendering and will later be
+     * clipped down.
+     *
+     * * center x, y (in projection system)
+     * * extent width, height (in projection system)
+     * * pixelWidth
+     * * pixelHeight
+     * @todo: this is a good candidate for a class that absorbs
+     *        the transformation functions for geometry rendering
+     */
+    /** @var  array */
+    protected $mainMapCanvas;
+
     public function __construct($container)
     {
         $this->container = $container;
@@ -74,6 +89,19 @@ class ImageExportService
     {
         $this->reset();
         $this->data = json_decode($content, true);
+
+        $this->mainMapCanvas = array(
+            'extent' => array(
+                'width' => $this->data['extentwidth'],
+                'height' => $this->data['extentheight'],
+            ),
+            'center' => array(
+                'x' => $this->data['centerx'],
+                'y' => $this->data['centery'],
+            ),
+            'pixelWidth' => $this->data['width'],
+            'pixelHeight' => $this->data['height'],
+        );
 
         foreach ($this->data['requests'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
@@ -538,32 +566,28 @@ class ImageExportService
     }
 
     /**
+     * Transform an x / y coordinate from a map projection system into a pixel
+     * offset.
+     *
+     * @param float $rw_x
+     * @param float $rw_y
      * @return float[] pixel offset x / y
      */
-    private function realWorld2mapPos($rw_x,$rw_y)
+    protected function realWorld2mapPos($rw_x, $rw_y)
     {
-        $map_width = $this->data['extentwidth'];
-        $map_height = $this->data['extentheight'];
-        $centerx = $this->data['centerx'];
-        $centery = $this->data['centery'];
+        $canvas = $this->mainMapCanvas;
+        $extentWidth  = $canvas['extent']['width'];
+        $extentHeight = $canvas['extent']['height'];
+        $centerx   = $canvas['center']['x'];
+        $centery   = $canvas['center']['y'];
 
-        $height = $this->data['height'];
-        $width = $this->data['width'];
+        $minX = $centerx - $extentWidth * 0.5;
+        $maxY = $centery + $extentHeight * 0.5;
 
-        $minX = $centerx - $map_width * 0.5;
-        $minY = $centery - $map_height * 0.5;
-        $maxX = $centerx + $map_width * 0.5;
-        $maxY = $centery + $map_height * 0.5;
+        $pixPos_x = (($rw_x - $minX) / $extentWidth) * $canvas['pixelWidth'];
+        $pixPos_y = (($maxY - $rw_y) / $extentHeight) * $canvas['pixelHeight'];
 
-        $extentx = $maxX - $minX ;
-        $extenty = $maxY - $minY ;
-
-        $pixPos_x = (($rw_x - $minX) / $extentx) * $width;
-        $pixPos_y = (($maxY - $rw_y) / $extenty) * $height;
-
-        $pixPos = array($pixPos_x, $pixPos_y);
-
-        return $pixPos;
+        return array($pixPos_x, $pixPos_y);
     }
 
     /**
