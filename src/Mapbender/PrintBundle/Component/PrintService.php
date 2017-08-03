@@ -449,13 +449,14 @@ class PrintService extends ImageExportService
             $url .= $bboxParam;
 
             $logger->debug("Print Overview Request Nr.: " . $i . ' ' . $url);
-            $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
-
-            if ($im) {
+            try {
+                $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
                 $imageName = $this->generateTempName();
                 imagesavealpha($im, true);
                 imagepng($im, $imageName);
                 $tempNames[] = $imageName;
+            } catch (\Exception $e) {
+                // ignore missing overview layer
             }
         }
 
@@ -895,10 +896,13 @@ class PrintService extends ImageExportService
                     continue;
                 }
 
-                $image = $this->downloadLegendImage($legendUrl);
-                if (!$image) {
+                try {
+                    $image = $this->downloadLegendImage($legendUrl);
+                } catch (\Exception $e) {
+                    // ignore the missing legend image, continue without it
                     continue;
                 }
+
                 $size  = getimagesize($image);
                 $tempY = round($size[1] * 25.4 / 96) + 10;
 
@@ -1010,15 +1014,11 @@ class PrintService extends ImageExportService
     private function downloadLegendImage($url)
     {
         $response = $this->mapRequest($url);
-        $imagename  = $this->generateTempName('_legend');
-        $res = @imagecreatefromstring($response->getContent());
-        if ($res) {
-            file_put_contents($imagename, $response->getContent());
-            imagedestroy($res);
-            return $imagename;
-        } else {
-            return null;
-        }
+        $imageResource = $this->serviceResponseToGdImage($response);
+        $imageName  = $this->generateTempName('_legend');
+        imagepng($imageResource, $imageName);
+        imagedestroy($imageResource);
+        return $imageName;
     }
 
     /**

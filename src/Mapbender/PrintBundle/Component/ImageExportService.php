@@ -117,14 +117,14 @@ class ImageExportService
         foreach ($layerSpecs as $i => $layerSpec) {
             $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $layerSpec['url']);
 
-            $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
-
-            if ($rawImage) {
+            try {
+                $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
                 $imageName = $this->generateTempName();
-
                 $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
                 imagepng($rgbaImage, $imageName);
                 $temp_names[] = $imageName;
+            } catch (\Exception $e) {
+                // ignore missing layer
             }
         }
         return $this->mergeImages($temp_names, $width, $height);
@@ -275,11 +275,23 @@ class ImageExportService
      * Converts a http response to a GD image, respecting the mimetype.
      *
      * @param Response $response
-     * @return resource|null GD image or null on failure
+     * @return resource GD image
+     * @throws \Exception if image could not be built from $response
      */
     protected function serviceResponseToGdImage($response)
     {
         $resource = imagecreatefromstring($response->getContent());
+        if (!$resource) {
+            $e = error_get_last();
+            /**
+             * @todo: throw more specific exception type
+             *        Exception should store $response in full
+             */
+            $em = "Image conversion failed with " . $e['message']
+                . " (Content-Type: " . var_export($response->headers->get('Content-Type'), true) . "; "
+                . " (Status Code: {$response->getStatusCode()})";
+            throw new \Exception($em);
+        }
         return $resource;
     }
 
@@ -591,6 +603,7 @@ class ImageExportService
      * @param integer $width
      * @param integer $height
      * @return resource (GD)
+     * @throws \Exception if image resource could not be created
      */
     protected function loadMapTile($baseUrl, $width, $height)
     {
@@ -599,12 +612,12 @@ class ImageExportService
         }
         $fullUrl = "{$baseUrl}&WIDTH=" . intval($width) . "&HEIGHT=" . intval($height);
         $response = $this->mapRequest($fullUrl);
-        $resource = $this->serviceResponseToGdImage($response);
-        if (!$resource) {
-            $this->getLogger()->error("ERROR! {$this->logPrefix} request failed: {$fullUrl} {$response->getStatusCode()}");
-            return null;
+        try {
+            $resource = $this->serviceResponseToGdImage($response);
+        } catch (\Exception $e) {
+            $this->getLogger()->error("{$this->logPrefix} while processing response from " . var_export($fullUrl, true) . ":\n\t{$e->getMessage()}");
+            throw $e;
         }
-
         return $resource;
     }
 
