@@ -210,7 +210,7 @@ class ImageExportService
         imagecopyresampled($image, $imageResource, 0, 0, 0, 0, $width, $height, $width, $height);
 
         // Taking the painful way to alpha blending. Stupid PHP-GD
-        if (1.0 !== $opacity) {
+        if ($opacity < 1) {
             for ($x = 0; $x < $width; $x++) {
                 for ($y = 0; $y < $height; $y++) {
                     $colorIn = imagecolorsforindex($image, imagecolorat($image, $x, $y));
