@@ -64,7 +64,6 @@ class ImageExportService
         }
         $this->resourceDir = $this->container->getParameter('kernel.root_dir') . '/Resources/MapbenderPrintBundle';
         $this->logPrefix = implode('', array_slice(explode('\\', get_class($this)), -1));
-        $this->reset();
     }
 
     /**
@@ -77,48 +76,57 @@ class ImageExportService
         return $logger;
     }
 
-    /**
-     * Clean up internally modified / collected state
-     */
-    protected function reset()
-    {
-        $this->mapRequests = array();
-    }
-
     public function export($content)
     {
-        $this->reset();
-        $this->data = json_decode($content, true);
+        $this->setup(json_decode($content, true));
 
-        $this->mainMapCanvas = array(
+        $imageResource = $this->buildMainMapImage();
+        $this->emitImageToBrowser($imageResource);
+        imagedestroy($imageResource);
+    }
+
+    /**
+     * @param array $configuration
+     */
+    private function setup($configuration)
+    {
+        $this->reset();
+        $this->data = $configuration;
+        $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
+        $this->mapRequests = $this->setupMapRequests($configuration);
+    }
+
+    protected static function setupMainMapCanvas($configuration)
+    {
+        return array(
             'extent' => array(
-                'width' => $this->data['extentwidth'],
-                'height' => $this->data['extentheight'],
+                'width' => $configuration['extentwidth'],
+                'height' => $configuration['extentheight'],
             ),
             'center' => array(
-                'x' => $this->data['centerx'],
-                'y' => $this->data['centery'],
+                'x' => $configuration['centerx'],
+                'y' => $configuration['centery'],
             ),
-            'pixelWidth' => $this->data['width'],
-            'pixelHeight' => $this->data['height'],
+            'pixelWidth' => $configuration['width'],
+            'pixelHeight' => $configuration['height'],
         );
+    }
 
-        foreach ($this->data['requests'] as $i => $layer) {
+    protected static function setupMapRequests($configuration)
+    {
+        $formattedRequests = array();
+        foreach ($configuration['requests'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
                 continue;
             }
             $baseUrl = strstr($layer['url'], '&WIDTH', true);
 
-            $this->mapRequests[$i] = array(
+            $formattedRequests[$i] = array(
                 'url'     => $baseUrl,
                 'opacity' => $layer['opacity'],
             );
         }
-
-
-        $imageResource = $this->buildMainMapImage();
-        $this->emitImageToBrowser($imageResource);
-        imagedestroy($imageResource);
+        return $formattedRequests;
     }
 
     /**

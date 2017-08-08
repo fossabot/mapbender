@@ -30,7 +30,6 @@ class PrintService extends ImageExportService
 
     public function doPrint($data)
     {
-        $this->reset();
         $this->setup($data);
 
         if ($data['rotation'] == 0) {
