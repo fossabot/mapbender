@@ -21,6 +21,9 @@ class PrintService extends ImageExportService
 
     protected $tempFilePrefix = 'mb_print';
 
+    /** @var  PrintTemplate */
+    protected $template;
+
     /**
      * @var array Default geometry style
      */
@@ -53,6 +56,7 @@ class PrintService extends ImageExportService
         $this->data = $data;
         $dpiQuality = $this->getQualityDpi();
 
+        $this->template = new PrintTemplate($this->resourceDir . '/templates', $data['template']);
         // template configuration from odg
         $odgParser = new OdgParser($this->container);
         $this->conf = $conf = $odgParser->getConf($data['template']);
@@ -228,9 +232,8 @@ class PrintService extends ImageExportService
 
         $this->pdf = $pdf = new PDF_Extensions();
 
-        $template = $this->data['template'];
-        $pdfFile = $this->resourceDir . '/templates/' . $template . '.pdf';
-        $pageCount = $pdf->setSourceFile($pdfFile);
+        $templatePdf = $this->template->getPdfPath();
+        $pageCount = $pdf->setSourceFile($templatePdf);
         $tplidx = $pdf->importPage(1);
         $pdf->SetAutoPageBreak(false);
         $pdf->addPage($orientation, $format);
@@ -259,8 +262,8 @@ class PrintService extends ImageExportService
         }
 
         // add northarrow
-        if (isset($this->conf['northarrow'])) {
-            $this->addNorthArrow();
+        if ($northarrow = $this->template->getCustomShape('northarrow')) {
+            $this->addNorthArrow($northarrow);
         }
 
         // get digitizer feature
@@ -357,36 +360,36 @@ class PrintService extends ImageExportService
         return $pdf->Output(null, 'S');
     }
 
-    private function addNorthArrow()
+    private function addNorthArrow($config)
     {
-        $northarrow = $this->resourceDir . '/images/northarrow.png';
+        $pngPath = $this->resourceDir . '/images/northarrow.png';
         $rotation = $this->rotation;
         $rotatedImageName = null;
 
         if($rotation != 0){
-            $image = imagecreatefrompng($northarrow);
+            $image = imagecreatefrompng($pngPath);
             $transColor = imagecolorallocatealpha($image, 255, 255, 255, 0);
             $rotatedImage = imagerotate($image, $rotation, $transColor);
             $rotatedImageName = $this->generateTempName('_northarrow');
 
             $srcSize = array(imagesx($rotatedImage), imagesy($rotatedImage));
-            $destSize = getimagesize($northarrow);
+            $destSize = getimagesize($pngPath);
             $x = ($srcSize[0] - $destSize[0]) / 2;
             $y = ($srcSize[1] - $destSize[1]) / 2;
             $destImage = imagecreatetruecolor($destSize[0], $destSize[1]);
             imagecopy($destImage, $rotatedImage, 0, 0, $x, $y, $srcSize[0], $srcSize[1]);
             imagepng($destImage, $rotatedImageName);
-            $northarrow = $rotatedImageName;
+            $pngPath = $rotatedImageName;
             imagedestroy($image);
             imagedestroy($rotatedImage);
             imagedestroy($destImage);
         }
 
-        $this->pdf->Image($northarrow,
-                            $this->conf['northarrow']['x'],
-                            $this->conf['northarrow']['y'],
-                            $this->conf['northarrow']['width'],
-                            $this->conf['northarrow']['height'],
+        $this->pdf->Image($pngPath,
+                            $config['x'],
+                            $config['y'],
+                            $config['width'],
+                            $config['height'],
                             'png');
         if($rotatedImageName){
             unlink($rotatedImageName);

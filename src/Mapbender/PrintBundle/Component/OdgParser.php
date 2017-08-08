@@ -38,13 +38,42 @@ class OdgParser
         $this->container = $container;
     }
 
+    /**
+     * Opens a zip archive at $zipPath and extracts the given archive member file directly into a DOMDocument.
+     *
+     * @param $zipPath
+     * @param $entryName
+     * @return \DOMDocument|null
+     */
+    public static function parseZipXmlMember($zipPath, $entryName)
+    {
+        $zip = zip_open($zipPath);
+        if (!is_resource($zip)) {
+            throw new \RuntimeException("Could not open $zipPath.");
+        }
+
+        while ($zip_entry = zip_read($zip)) {
+            if (zip_entry_name($zip_entry) == $entryName) {
+                zip_entry_open($zip, $zip_entry);
+                $body = zip_entry_read($zip_entry, 204800);
+                zip_entry_close($zip_entry);
+                zip_close($zip);
+                $doc = new \DOMDocument();
+                $doc->loadXML($body);
+                return $doc;
+            }
+            zip_entry_close($zip_entry);
+        }
+        zip_close($zip);
+        return null;
+    }
 
     /**
      * Reads zipped ODG file and return content as string
      *
      * @param $template
      * @param $file
-     * @return string
+     * @return \DOMDocument
      */
     private function readOdgFile($template, $file)
     {
@@ -55,17 +84,7 @@ class OdgParser
         if(!is_file($odgFile)){
             throw new Exception("Print template '$template' doesn't exists.");
         }
-
-        $open = zip_open($odgFile);
-        while ($zip_entry = zip_read($open)) {
-            if (zip_entry_name($zip_entry) == $file) {
-                zip_entry_open($open, $zip_entry);
-                $xml = zip_entry_read($zip_entry, 204800);
-                break;
-            }
-        }
-        zip_close($open);
-        return $xml;
+        return $this->parseZipXmlMember($odgFile, $file);
     }
 
     /**
@@ -76,9 +95,7 @@ class OdgParser
      */
     public function getMapSize($template)
     {
-        $doc        = new \DOMDocument();
-        $xmlContent = $this->readOdgFile($template, 'content.xml');
-        $doc->loadXML($xmlContent);
+        $doc = $this->readOdgFile($template, 'content.xml');
 
         /** @var \DOMElement $draMapNode */
         $draMapNode = (new \DOMXPath($doc))->query("//draw:custom-shape[@draw:name='map']")->item(0);
@@ -97,15 +114,8 @@ class OdgParser
      */
     public function getConf($template)
     {
-        /** @var \DOMElement $pageGeometry */
-        /** @var \DOMElement $customShape */
-        /** @var \DOMElement $textNode */
-        /** @var \DOMElement $textParagraph */
-        /** @var \DOMElement $styleNode */
-
-        $doc = new \DOMDocument();
-        $doc->loadXML($this->readOdgFile($template, 'styles.xml'));
-        $xPath        = new \DOMXPath($doc);
+        $stylesDoc = $this->readOdgFile($template, 'styles.xml');
+        $xPath        = new \DOMXPath($stylesDoc);
         $node         = $xPath->query("//style:page-layout-properties");
         $pageGeometry = $node->item(0);
         $data         = array(
@@ -117,18 +127,31 @@ class OdgParser
             'fields' => array()
         );
 
-        $this->xPath = $xPath;
-
-        $doc = new \DOMDocument();
-        $doc->loadXML($this->readOdgFile($template, 'content.xml'));
-
-        $xPath        = new \DOMXPath($doc);
-        $customShapes = $xPath->query("//draw:custom-shape");
-        foreach ($customShapes as $customShape) {
-            $data[ $customShape->getAttribute('draw:name') ] = static::parseShape($customShape);
+        $contentDoc = $this->readOdgFile($template, 'content.xml');
+        $data = array_replace($data, static::extractCustomShapes($contentDoc));
+        /**
+         * Equivalence to pre-refactoring logic: avoid setting empty fields array.
+         * @todo: determine if this is necessary; print service might work with an empty array just fine
+         */
+        $fields = static::extractFields($contentDoc);
+        if ($fields) {
+            $data['fields'] = $fields;
         }
+        return $data;
+    }
 
-        foreach ($xPath->query("draw:page/draw:frame", $doc->getElementsByTagName('drawing')->item(0)) as $node) {
+    /**
+     * @param \DOMDocument $doc
+     * @return array
+     */
+    public static function extractFields($doc)
+    {
+        $xPath = new \DOMXPath($doc);
+        $nodes = $xPath->query("draw:page/draw:frame", $doc->getElementsByTagName('drawing')->item(0));
+
+        $fields = array();
+        foreach ($nodes as $node) {
+            /** @var \DOMElement $node */
             $name      = $node->getAttribute('draw:name');
             $fontSize  = null;
             $fontColor = null;
@@ -153,14 +176,28 @@ class OdgParser
                 $fontColor = static::parseNodeAttribute($styleNode, 'fo:color', static::DEFAULT_FONT_COLOR);
             }
 
-            $data['fields'][ $name ] = array_merge(static::parseShape($node), array(
+            $fields[$name] = array_merge(static::parseShape($node), array(
                 'font'     => self::DEFAULT_FONT_NAME,
                 'fontsize' => !empty($fontSize) ? $fontSize : self::DEFAULT_FONT_SIZE,
                 'color'    => !empty($fontColor) ? $fontColor : self::DEFAULT_FONT_COLOR,
             ));
         }
-        return $data;
+        return $fields;
     }
+
+    public static function extractCustomShapes($doc)
+    {
+        $shapes = array();
+        $xPath        = new \DOMXPath($doc);
+        $customShapes = $xPath->query("//draw:custom-shape");
+        foreach ($customShapes as $customShape) {
+            /** @var \DOMElement $customShape */
+            $shapeKey = $customShape->getAttribute('draw:name');
+            $shapes[$shapeKey] = static::parseShape($customShape);
+        }
+        return $shapes;
+    }
+
 
     /**
      * Parse node attribute
@@ -170,7 +207,7 @@ class OdgParser
      * @param mixed       $defaultValue
      * @return mixed
      */
-    static function parseNodeAttribute($node, $xPath, $defaultValue = '')
+    public static function parseNodeAttribute($node, $xPath, $defaultValue = '')
     {
         $value = $node->getAttribute($xPath);
         return empty($value) ? $defaultValue : $value;
@@ -184,7 +221,7 @@ class OdgParser
      * @param mixed       $defaultValue
      * @return mixed
      */
-    static function parseNumericNodeAttribute($node, $xPath, $defaultValue = 0)
+    public static function parseNumericNodeAttribute($node, $xPath, $defaultValue = 0)
     {
         $value = $node->getAttribute($xPath);
         if (!empty($value) && is_string($value) && strlen($value) > 2) {
