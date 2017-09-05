@@ -90,7 +90,6 @@ class ImageExportService
      */
     private function setup($configuration)
     {
-        $this->reset();
         $this->data = $configuration;
         $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
         $this->mapRequests = $this->setupMapRequests($configuration);

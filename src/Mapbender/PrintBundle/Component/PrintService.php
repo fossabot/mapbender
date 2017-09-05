@@ -798,10 +798,12 @@ class PrintService extends ImageExportService
     private function downloadLegendImage($url)
     {
         $response = $this->mapRequest($url);
-        $imageResource = $this->serviceResponseToGdImage($response);
+        $imageRaw = $this->serviceResponseToGdImage($response);
+        $imageRGBA = $this->forceToRgba($imageRaw, 1);
         $imageName  = $this->generateTempName('_legend');
-        imagepng($imageResource, $imageName);
-        imagedestroy($imageResource);
+        imagepng($imageRGBA, $imageName);
+        imagedestroy($imageRaw);
+        imagedestroy($imageRGBA);
         return $imageName;
     }
 
