@@ -646,21 +646,19 @@ class PrintService extends ImageExportService
     {
         $titleHeight = 5;
 
-        if(isset($this->conf['legend']) && $this->conf['legend']){
-          // print legend on first
+        if (!empty($this->conf['legend'])) {
+          // start printing legend in a configured box on first page
           $availableHeight = $this->conf['legend']['height'];
           $availableWidth = $this->conf['legend']['width'];
           $xStartPosition = $this->conf['legend']['x'] + 5;
           $yStartPosition = $this->conf['legend']['y'] + 5;
-          $fullPageLegend = false;
         } else {
-          // print legend on second page
+          // start printing legend on dedicated page
           $this->newLegendPage();
           $xStartPosition = 5;
           $yStartPosition = 10;
           $availableHeight = $this->pdf->getHeight();
           $availableWidth = $this->pdf->getWidth();
-          $fullPageLegend = true;
         }
 
         $x = $xStartPosition;
@@ -686,24 +684,12 @@ class PrintService extends ImageExportService
                 $heightNeeded = round($size[1] * 25.4 / 96) + 5 + $titleHeight;
 
                 if ($c > 1) {
-                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight && $fullPageLegend) {
+                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight) {
                         $nextColumnX = $x + 105;
                         if ($nextColumnX - $xStartPosition + 20 <= $availableWidth) {
                             $x = $nextColumnX;
                             $y = $yStartPosition;
                         } else {
-                            $needNewPage = true;
-                        }
-                    }
-
-                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight && !$fullPageLegend) {
-                        // try adding another column, restarting at the top
-                        $nextColumnX = $x + 105;
-                        if ($nextColumnX - $xStartPosition + 20 <= $availableWidth) {
-                            $x = $nextColumnX;
-                            $y = $yStartPosition;
-                        } else {
-                            // no more horizontal space for another column
                             $needNewPage = true;
                         }
                     }
@@ -713,7 +699,6 @@ class PrintService extends ImageExportService
                     // no space on current page (or embedded legend box) for next legend item
                     // => spill to new page, switch to full-page mode
                     $this->newLegendPage();
-                    $fullPageLegend = true;
                     $x = $xStartPosition = 5;
                     $y = $yStartPosition = 10;
                     $availableWidth = $this->pdf->getWidth();
