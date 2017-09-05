@@ -709,79 +709,39 @@ class PrintService extends ImageExportService
 
 
                     // print legend on first page
-                    if(($y-$yStartPosition) + $tempY + 10 > $height && $width > 100 && $legendConf == true){
-                        $x += $x + 105;
-                        $y = $yStartPosition + 5;
-                        if($x - $xStartPosition + 20 > $width){
+                    if (($y - $yStartPosition) + $tempY + 10 > $height && $legendConf == true) {
+                        if ($width > 100) {
+                            $x += $x + 105;
+                            $y = $yStartPosition + 5;
+                            if($x - $xStartPosition + 20 > $width){
+                                $this->pdf->addPage('P');
+                                $x = 5;
+                                $y = 10;
+                                $legendConf = false;
+                                if (!empty($this->conf['legendpage_image'])) {
+                                   $this->addLegendPageImage();
+                                }
+                            }
+                        } else {
                             $this->pdf->addPage('P');
                             $x = 5;
                             $y = 10;
                             $legendConf = false;
                             if (!empty($this->conf['legendpage_image'])) {
-                               $this->addLegendPageImage();
+                                $this->addLegendPageImage();
                             }
                         }
-                    }else if (($y-$yStartPosition) + $tempY + 10 > $height && $legendConf == true){
-                            $this->pdf->addPage('P');
-                            $x = 5;
-                            $y = 10;
-                            $legendConf = false;
-                            if (!empty($this->conf['legendpage_image'])) {
-                               $this->addLegendPageImage();
-                            }
                     }
                 }
 
+                $this->pdf->setXY($x, $y);
+                $this->pdf->Cell(0,0, utf8_decode($title));
+                $this->pdf->Image($image,
+                    $x,
+                    $y +5 ,
+                    ($size[0] * 25.4 / 96), ($size[1] * 25.4 / 96), 'png', '', false, 0);
 
-                if ($legendConf == true) {
-                    // add legend in legend region on first page
-                    // To Be doneCell(0,0,  utf8_decode($title));
-                    $this->pdf->setXY($x,$y);
-                    $this->pdf->Cell(0,0,  utf8_decode($title));
-                    $this->pdf->Image($image,
-                                $x,
-                                $y +5 ,
-                                ($size[0] * 25.4 / 96), ($size[1] * 25.4 / 96), 'png', '', false, 0);
-
-                        $y += round($size[1] * 25.4 / 96) + 10;
-                        if(($y - $yStartPosition + 10 ) > $height && $width > 100){
-                            $x +=  105;
-                            $y = $yStartPosition + 10;
-                        }
-                        if(($x - $xStartPosition + 10) > $width && $c < $arraySize ){
-                            $this->pdf->addPage('P');
-                            $x = 5;
-                            $y = 10;
-                            $this->pdf->SetFont('Arial', 'B', 11);
-                            $height = $this->pdf->getHeight();
-                            $width = $this->pdf->getWidth();
-                            $legendConf = false;
-                            if (!empty($this->conf['legendpage_image'])) {
-                               $this->addLegendPageImage();
-                            }
-                        }
-
-                  }else{
-                      // print legend on second page
-                      $this->pdf->setXY($x,$y);
-                      $this->pdf->Cell(0,0,  utf8_decode($title));
-                      $this->pdf->Image($image, $x, $y + 5, ($size[0] * 25.4 / 96), ($size[1] * 25.4 / 96), 'png', '', false, 0);
-
-                      $y += round($size[1] * 25.4 / 96) + 10;
-                      if($y > ($this->pdf->getHeight())){
-                          $x += 105;
-                          $y = 10;
-                      }
-                      if($x + 20 > ($this->pdf->getWidth()) && $c < $arraySize){
-                          $this->pdf->addPage('P');
-                          $x = 5;
-                          $y = 10;
-                            if (!empty($this->conf['legendpage_image'])) {
-                               $this->addLegendPageImage();
-                            }
-                      }
-
-                  }
+                $y += round($size[1] * 25.4 / 96) + 10;
 
                 unlink($image);
                 $c++;
