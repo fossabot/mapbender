@@ -669,9 +669,8 @@ class PrintService extends ImageExportService
           $yStartPosition = 0;
         }
 
+        $c = 1;
         foreach ($this->data['legends'] as $idx => $legendArray) {
-            $c         = 1;
-            $arraySize = count($legendArray);
             foreach ($legendArray as $title => $legendUrl) {
 
                 if (preg_match('/request=GetLegendGraphic/i', urldecode($legendUrl)) === 0) {
@@ -694,9 +693,6 @@ class PrintService extends ImageExportService
                     if($y + $tempY + 10 > ($this->pdf->getHeight()) && $legendConf == false){
                         $x += 105;
                         $y = 10;
-                        if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
-                           $this->addLegendPageImage();
-                        }
                         if($x + 20 > ($this->pdf->getWidth())){
                             $this->pdf->addPage('P');
                             $x = 5;
