@@ -655,16 +655,12 @@ class PrintService extends ImageExportService
           $legendConf = true;
         }else{
           // print legend on second page
-          $this->pdf->addPage('P');
-          $this->pdf->SetFont('Arial', 'B', 11);
+          $this->newLegendPage();
           $x = 5;
           $y = 10;
           $height = $this->pdf->getHeight();
           $width = $this->pdf->getWidth();
           $legendConf = false;
-          if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
-             $this->addLegendPageImage();
-          }
           $xStartPosition = 0;
           $yStartPosition = 0;
         }
@@ -690,19 +686,15 @@ class PrintService extends ImageExportService
 
                 if ($c > 1) {
                     // print legend on second page
-                    if($y + $tempY + 10 > ($this->pdf->getHeight()) && $legendConf == false){
+                    if($y + $tempY + 10 > $height && !$legendConf) {
                         $x += 105;
                         $y = 10;
-                        if($x + 20 > ($this->pdf->getWidth())){
-                            $this->pdf->addPage('P');
+                        if ($x + 20 > $width) {
+                            $this->newLegendPage();
                             $x = 5;
                             $y = 10;
-                            if(isset($this->conf['legendpage_image']) && $this->conf['legendpage_image']){
-                               $this->addLegendPageImage();
-                            }
                         }
                     }
-
 
                     // print legend on first page
                     if (($y - $yStartPosition) + $tempY + 10 > $height && $legendConf == true) {
@@ -710,22 +702,16 @@ class PrintService extends ImageExportService
                             $x += $x + 105;
                             $y = $yStartPosition + 5;
                             if($x - $xStartPosition + 20 > $width){
-                                $this->pdf->addPage('P');
                                 $x = 5;
                                 $y = 10;
-                                $legendConf = false;
-                                if (!empty($this->conf['legendpage_image'])) {
-                                   $this->addLegendPageImage();
-                                }
                             }
                         } else {
-                            $this->pdf->addPage('P');
+                            $this->newLegendPage();
+                            $legendConf = false;
                             $x = 5;
                             $y = 10;
-                            $legendConf = false;
-                            if (!empty($this->conf['legendpage_image'])) {
-                                $this->addLegendPageImage();
-                            }
+                            $width = $this->pdf->getWidth();
+                            $height = $this->pdf->getHeight();
                         }
                     }
                 }
@@ -746,6 +732,20 @@ class PrintService extends ImageExportService
     }
 
 
+    /**
+     * Append a new page to $this->pdf for a legend spilling over. The page is always in portrait mode. This also
+     * switches the font.
+     * If configured, a watermark image may be inserted on the new page.
+     *
+     */
+    protected function newLegendPage()
+    {
+        $this->pdf->addPage('P');
+        $this->pdf->SetFont('Arial', 'B', 11);
+        if (!empty($this->conf['legendpage_image'])) {
+            $this->addLegendPageImage();
+        }
+    }
 
     private function addLegendPageImage()
     {
