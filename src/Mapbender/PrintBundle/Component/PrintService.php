@@ -677,9 +677,10 @@ class PrintService extends ImageExportService
                 if (preg_match('/request=GetLegendGraphic/i', urldecode($legendUrl)) === 0) {
                     continue;
                 }
+                $image = $this->generateTempName('_legend');
 
                 try {
-                    $image = $this->downloadLegendImage($legendUrl);
+                    $this->storeImage($image, $legendUrl);
                 } catch (\Exception $e) {
                     // ignore the missing legend image, continue without it
                     continue;
@@ -789,19 +790,6 @@ class PrintService extends ImageExportService
     }
 
 
-
-    /**
-     * @param string $url
-     * @return string path to created local copy
-     */
-    private function downloadLegendImage($url)
-    {
-        $imageRGBA  = $this->fetchImage($url, 1);
-        $imageName  = $this->generateTempName('_legend');
-        imagepng($imageRGBA, $imageName);
-        imagedestroy($imageRGBA);
-        return $imageName;
-    }
 
     private function addLegendPageImage()
     {

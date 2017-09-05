@@ -700,6 +700,20 @@ class ImageExportService
     }
 
     /**
+     * Downloads an image from given $url and stores it in the file system at $path.
+     *
+     * @param string $path
+     * @param string $url
+     * @param float $opacity in [0;1]
+     */
+    protected function storeImage($path, $url, $opacity=1.0)
+    {
+        $imageRGBA  = $this->fetchImage($url, $opacity);
+        imagepng($imageRGBA, $path);
+        imagedestroy($imageRGBA);
+    }
+
+    /**
      * Generate a semi-random name for a temporary file.
      *
      * @param string|null $addPrefix will be concatenated with class-specific prefix
