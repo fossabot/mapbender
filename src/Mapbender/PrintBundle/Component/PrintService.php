@@ -433,7 +433,6 @@ class PrintService extends ImageExportService
             try {
                 $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
                 $imageName = $this->generateTempName();
-                imagesavealpha($im, true);
                 imagepng($im, $imageName);
                 $tempNames[] = $imageName;
                 imagedestroy($im);
@@ -797,12 +796,9 @@ class PrintService extends ImageExportService
      */
     private function downloadLegendImage($url)
     {
-        $response = $this->mapRequest($url);
-        $imageRaw = $this->serviceResponseToGdImage($response);
-        $imageRGBA = $this->forceToRgba($imageRaw, 1);
+        $imageRGBA  = $this->fetchImage($url, 1);
         $imageName  = $this->generateTempName('_legend');
         imagepng($imageRGBA, $imageName);
-        imagedestroy($imageRaw);
         imagedestroy($imageRGBA);
         return $imageName;
     }

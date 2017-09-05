@@ -158,13 +158,11 @@ class ImageExportService
             $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $layerSpec['url']);
 
             try {
-                $rawImage = $this->loadMapTile($layerSpec['url'], $width, $height);
+                $rgbaImage = $this->loadMapTile($layerSpec['url'], $width, $height, $layerSpec['opacity']);
             } catch (\Exception $e) {
                 // ignore missing layer
                 continue;
             }
-            $rgbaImage = $this->forceToRgba($rawImage, $layerSpec['opacity']);
-            imagedestroy($rawImage);
             imagecopy($mergedImage, $rgbaImage, 0, 0, 0, 0, $width, $height);
             imagedestroy($rgbaImage);
         }
@@ -663,26 +661,42 @@ class ImageExportService
 
     /**
      *
-     * @param $baseUrl
+     * @param string $baseUrl
      * @param integer $width
      * @param integer $height
+     * @param float $opacity in [0;1]
      * @return resource (GD)
      * @throws \Exception if image resource could not be created
      */
-    protected function loadMapTile($baseUrl, $width, $height)
+    protected function loadMapTile($baseUrl, $width, $height, $opacity=1.0)
     {
         if (false === strpos($baseUrl, '?')) {
             $baseUrl = "{$baseUrl}?";
         }
         $fullUrl = "{$baseUrl}&WIDTH=" . intval($width) . "&HEIGHT=" . intval($height);
-        $response = $this->mapRequest($fullUrl);
+        return $this->fetchImage($fullUrl, $opacity);
+    }
+
+
+    /**
+     *
+     * @param string $url
+     * @param float $opacity in [0;1]
+     * @return resource (GD)
+     * @throws \Exception if image resource could not be created
+     */
+    protected function fetchImage($url, $opacity=1.0)
+    {
+        $response = $this->mapRequest($url);
         try {
             $resource = $this->serviceResponseToGdImage($response);
         } catch (\Exception $e) {
-            $this->getLogger()->error("{$this->logPrefix} while processing response from " . var_export($fullUrl, true) . ":\n\t{$e->getMessage()}");
+            $this->getLogger()->error("{$this->logPrefix} while processing response from " . var_export($url, true) . ":\n\t{$e->getMessage()}");
             throw $e;
         }
-        return $resource;
+        $imageRGBA = $this->forceToRgba($resource, $opacity);
+        imagedestroy($resource);
+        return $imageRGBA;
     }
 
     /**
