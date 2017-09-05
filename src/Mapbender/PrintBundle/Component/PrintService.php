@@ -69,73 +69,56 @@ class PrintService extends ImageExportService
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $request = strstr($layer['url'], '&BBOX', true);
-
-            $extentWidth = $data['extent']['width'];
-            $extentHeight = $data['extent']['height'];
-            $centerx = $data['center']['x'];
-            $centery = $data['center']['y'];
-
-            // switch axis for some EPSG if WMS Version 1.3.0
-            if (!empty($layer['changeAxis'])){
-                $extentWidth = $data['extent']['height'];
-                $extentHeight = $data['extent']['width'];
-                $centerx = $data['center']['y'];
-                $centery = $data['center']['x'];
-            }
+            $extent = $data['extent'];
+            $center = $data['center'];
 
             // switch if image is rotated
             $this->rotation = $rotation = $data['rotation'];
             if ($rotation == 0) {
-                // calculate needed bbox
-                $minX = $centerx - $extentWidth * 0.5;
-                $minY = $centery - $extentHeight * 0.5;
-                $maxX = $centerx + $extentWidth * 0.5;
-                $maxY = $centery + $extentHeight * 0.5;
-
-                $width = '&WIDTH=' . $this->imageWidth;
-                $height =  '&HEIGHT=' . $this->imageHeight;
-
-                $this->mainMapCanvas = array(
-                    'extent' => $data['extent'],
-                    'center' => $data['center'],
-                    'pixelWidth' => $this->imageWidth,
-                    'pixelHeight' => $this->imageHeight,
-                );
-            }else{
-                // calculate needed bbox
-                $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extentHeight) +
-                    abs(cos(deg2rad($rotation)) * $extentWidth);
-                $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extentWidth) +
-                    abs(cos(deg2rad($rotation)) * $extentHeight);
-
-                $minX = $centerx - $neededExtentWidth * 0.5;
-                $minY = $centery - $neededExtentHeight * 0.5;
-                $maxX = $centerx + $neededExtentWidth * 0.5;
-                $maxY = $centery + $neededExtentHeight * 0.5;
-
+                $neededImageWidth = $this->imageWidth;
+                $neededImageHeight = $this->imageHeight;
+                $neededExtent = $extent;
+            } else {
                 // calculate needed image size
                 $neededImageWidth = round(abs(sin(deg2rad($rotation)) * $this->imageHeight) +
                     abs(cos(deg2rad($rotation)) * $this->imageWidth));
                 $neededImageHeight = round(abs(sin(deg2rad($rotation)) * $this->imageWidth) +
                     abs(cos(deg2rad($rotation)) * $this->imageHeight));
 
-                $width = '&WIDTH=' . $neededImageWidth;
-                $height =  '&HEIGHT=' . $neededImageHeight;
+                // calculate needed bbox
+                $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extent['height']) +
+                    abs(cos(deg2rad($rotation)) * $extent['width']);
+                $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extent['width']) +
+                    abs(cos(deg2rad($rotation)) * $extent['height']);
 
-                $this->mainMapCanvas = array(
-                    'extent' => array(
-                        'width' => $neededExtentWidth,
-                        'height' => $neededExtentHeight,
-                    ),
-                    'center' => $data['center'],
-                    'pixelWidth' => $neededImageWidth,
-                    'pixelHeight' => $neededImageHeight,
+                $neededExtent = array(
+                    'width' => $neededExtentWidth,
+                    'height' => $neededExtentHeight,
                 );
             }
 
-            $request .= '&BBOX=' . $minX . ',' . $minY . ',' . $maxX . ',' . $maxY;
-            $request .= $width . $height;
+            $this->mainMapCanvas = array(
+                'extent' => $neededExtent,
+                'center' => $center,
+                'pixelWidth' => $neededImageWidth,
+                'pixelHeight' => $neededImageHeight,
+            );
+
+            $minX = $center['x'] - $neededExtent['width'] * 0.5;
+            $minY = $center['y'] - $neededExtent['height'] * 0.5;
+            $maxX = $center['x'] + $neededExtent['width'] * 0.5;
+            $maxY = $center['y'] + $neededExtent['height'] * 0.5;
+
+            $request = strstr($layer['url'], '&BBOX', true);
+            // switch BBOX order for some EPSG if WMS Version 1.3.0
+            if (!empty($layer['changeAxis'])){
+                $bboxParam = "$minY,$minX,$maxY,$maxX";
+            } else {
+                $bboxParam = "$minX,$minY,$maxX,$maxY";
+            }
+
+            $request .= "&BBOX=$bboxParam";
+            $request .= "&WIDTH=${neededImageWidth}&HEIGHT=${neededImageHeight}";
 
             if (isset($this->data['replace_pattern'])) {
                 $request = $this->addReplacePattern($request, $dpiQuality);
