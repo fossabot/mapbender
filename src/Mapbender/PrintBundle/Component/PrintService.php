@@ -644,27 +644,27 @@ class PrintService extends ImageExportService
 
     private function addLegend()
     {
+        $titleHeight = 5;
+
         if(isset($this->conf['legend']) && $this->conf['legend']){
           // print legend on first
-          $height = $this->conf['legend']['height'];
-          $width = $this->conf['legend']['width'];
-          $xStartPosition = $this->conf['legend']['x'];
-          $yStartPosition = $this->conf['legend']['y'];
-          $x = $xStartPosition + 5;
-          $y = $yStartPosition + 5;
-          $legendConf = true;
-        }else{
+          $availableHeight = $this->conf['legend']['height'];
+          $availableWidth = $this->conf['legend']['width'];
+          $xStartPosition = $this->conf['legend']['x'] + 5;
+          $yStartPosition = $this->conf['legend']['y'] + 5;
+          $fullPageLegend = false;
+        } else {
           // print legend on second page
           $this->newLegendPage();
-          $x = 5;
-          $y = 10;
-          $height = $this->pdf->getHeight();
-          $width = $this->pdf->getWidth();
-          $legendConf = false;
-          $xStartPosition = 0;
-          $yStartPosition = 0;
+          $xStartPosition = 5;
+          $yStartPosition = 10;
+          $availableHeight = $this->pdf->getHeight();
+          $availableWidth = $this->pdf->getWidth();
+          $fullPageLegend = true;
         }
 
+        $x = $xStartPosition;
+        $y = $yStartPosition;
         $c = 1;
         foreach ($this->data['legends'] as $idx => $legendArray) {
             foreach ($legendArray as $title => $legendUrl) {
@@ -680,50 +680,54 @@ class PrintService extends ImageExportService
                     // ignore the missing legend image, continue without it
                     continue;
                 }
+                $needNewPage = false;
 
                 $size  = getimagesize($image);
-                $tempY = round($size[1] * 25.4 / 96) + 10;
+                $heightNeeded = round($size[1] * 25.4 / 96) + 5 + $titleHeight;
 
                 if ($c > 1) {
-                    // print legend on second page
-                    if($y + $tempY + 10 > $height && !$legendConf) {
-                        $x += 105;
-                        $y = 10;
-                        if ($x + 20 > $width) {
-                            $this->newLegendPage();
-                            $x = 5;
-                            $y = 10;
+                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight && $fullPageLegend) {
+                        $nextColumnX = $x + 105;
+                        if ($nextColumnX - $xStartPosition + 20 <= $availableWidth) {
+                            $x = $nextColumnX;
+                            $y = $yStartPosition;
+                        } else {
+                            $needNewPage = true;
                         }
                     }
 
-                    // print legend on first page
-                    if (($y - $yStartPosition) + $tempY + 10 > $height && $legendConf == true) {
-                        if ($width > 100) {
-                            $x += $x + 105;
-                            $y = $yStartPosition + 5;
-                            if($x - $xStartPosition + 20 > $width){
-                                $x = 5;
-                                $y = 10;
-                            }
+                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight && !$fullPageLegend) {
+                        // try adding another column, restarting at the top
+                        $nextColumnX = $x + 105;
+                        if ($nextColumnX - $xStartPosition + 20 <= $availableWidth) {
+                            $x = $nextColumnX;
+                            $y = $yStartPosition;
                         } else {
-                            $this->newLegendPage();
-                            $legendConf = false;
-                            $x = 5;
-                            $y = 10;
-                            $width = $this->pdf->getWidth();
-                            $height = $this->pdf->getHeight();
+                            // no more horizontal space for another column
+                            $needNewPage = true;
                         }
                     }
+                }
+
+                if ($needNewPage) {
+                    // no space on current page (or embedded legend box) for next legend item
+                    // => spill to new page, switch to full-page mode
+                    $this->newLegendPage();
+                    $fullPageLegend = true;
+                    $x = $xStartPosition = 5;
+                    $y = $yStartPosition = 10;
+                    $availableWidth = $this->pdf->getWidth();
+                    $availableHeight = $this->pdf->getHeight();
                 }
 
                 $this->pdf->setXY($x, $y);
                 $this->pdf->Cell(0,0, utf8_decode($title));
                 $this->pdf->Image($image,
                     $x,
-                    $y +5 ,
+                    $y + $titleHeight ,
                     ($size[0] * 25.4 / 96), ($size[1] * 25.4 / 96), 'png', '', false, 0);
 
-                $y += round($size[1] * 25.4 / 96) + 10;
+                $y += $heightNeeded;
 
                 unlink($image);
                 $c++;
