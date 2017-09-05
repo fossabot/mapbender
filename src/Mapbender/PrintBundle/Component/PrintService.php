@@ -661,8 +661,8 @@ class PrintService extends ImageExportService
           $availableWidth = $this->pdf->getWidth();
         }
 
-        $x = $xStartPosition;
-        $y = $yStartPosition;
+        $x = 0;
+        $y = 0;
         $c = 1;
         foreach ($this->data['legends'] as $idx => $legendArray) {
             foreach ($legendArray as $title => $legendUrl) {
@@ -684,11 +684,11 @@ class PrintService extends ImageExportService
                 $heightNeeded = round($size[1] * 25.4 / 96) + 5 + $titleHeight;
 
                 if ($c > 1) {
-                    if (($y - $yStartPosition) + $heightNeeded > $availableHeight) {
+                    if ($y + $heightNeeded > $availableHeight) {
                         $nextColumnX = $x + 105;
-                        if ($nextColumnX - $xStartPosition + 20 <= $availableWidth) {
+                        if ($nextColumnX + 20 <= $availableWidth) {
                             $x = $nextColumnX;
-                            $y = $yStartPosition;
+                            $y = 0;
                         } else {
                             $needNewPage = true;
                         }
@@ -699,17 +699,19 @@ class PrintService extends ImageExportService
                     // no space on current page (or embedded legend box) for next legend item
                     // => spill to new page, switch to full-page mode
                     $this->newLegendPage();
-                    $x = $xStartPosition = 5;
-                    $y = $yStartPosition = 10;
+                    $xStartPosition = 5;
+                    $yStartPosition = 10;
+                    $x = 0;
+                    $y = 0;
                     $availableWidth = $this->pdf->getWidth();
                     $availableHeight = $this->pdf->getHeight();
                 }
 
-                $this->pdf->setXY($x, $y);
+                $this->pdf->setXY($x + $xStartPosition, $y + $yStartPosition);
                 $this->pdf->Cell(0,0, utf8_decode($title));
                 $this->pdf->Image($image,
-                    $x,
-                    $y + $titleHeight ,
+                    $x + $xStartPosition,
+                    $y + $titleHeight + $yStartPosition,
                     ($size[0] * 25.4 / 96), ($size[1] * 25.4 / 96), 'png', '', false, 0);
 
                 $y += $heightNeeded;
