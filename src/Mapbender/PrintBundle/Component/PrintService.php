@@ -64,6 +64,7 @@ class PrintService extends ImageExportService
         $this->imageWidth = round($this->pdfUnitsToPixels($conf['map']['width']));
         $this->imageHeight = round($this->pdfUnitsToPixels($conf['map']['height']));
         $this->mainMapCanvas = $this->setupMainMapCanvas($data);
+        $this->mainMapCanvas->setLogger($this->getLogger());
         $this->mapRequests = $this->setupMapRequests($data);
     }
 
@@ -76,7 +77,7 @@ class PrintService extends ImageExportService
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $request = strstr($layer['url'], '&BBOX', true);
+            $request = $this->clearExtentParamsFromUrl($layer['url']);
             if (isset($this->data['replace_pattern'])) {
                 $request = $this->addReplacePattern($request, $dpiQuality);
             } else {
@@ -86,7 +87,7 @@ class PrintService extends ImageExportService
             }
 
             $formattedRequests[$i] = array(
-                'url'     => $request,
+                'baseUrl' => $request,
                 'opacity' => $layer['opacity'],
             );
         }
@@ -396,7 +397,7 @@ class PrintService extends ImageExportService
             $layersOut[] = array(
                 // pre-strip BBOX (and presumably(?) WIDTH= and HEIGHT=) from layer inputs; they will be added back
                 // when the requests are made
-                'url'        => strstr($layer['url'], '&BBOX', true),
+                'baseUrl'    => $this->clearExtentParamsFromUrl($layer['url']),
                 'opacity'    => 1.0,
                 'changeAxis' => !empty($layer['changeAxis']),
             );

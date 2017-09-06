@@ -92,6 +92,7 @@ class ImageExportService implements MapLoaderInterface
     {
         $this->data = $configuration;
         $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
+        $this->mainMapCanvas->setLogger($this->getLogger());
         $this->mapRequests = $this->setupMapRequests($configuration);
     }
 
@@ -118,11 +119,11 @@ class ImageExportService implements MapLoaderInterface
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $baseUrl = strstr($layer['url'], '&WIDTH', true);
 
             $formattedRequests[$i] = array(
-                'url'     => $baseUrl,
-                'opacity' => $layer['opacity'],
+                'baseUrl'    => $this->clearExtentParamsFromUrl($layer['url']),
+                'opacity'    => $layer['opacity'],
+                'changeAxis' => !empty($layer['changeAxis']),
             );
         }
         return $formattedRequests;
@@ -593,31 +594,12 @@ class ImageExportService implements MapLoaderInterface
 
     /**
      *
-     * @param string $baseUrl
-     * @param integer $width
-     * @param integer $height
-     * @param float $opacity in [0;1]
-     * @return resource (GD)
-     * @throws \Exception if image resource could not be created
-     */
-    public function loadMapTile($baseUrl, $width, $height, $opacity=1.0)
-    {
-        if (false === strpos($baseUrl, '?')) {
-            $baseUrl = "{$baseUrl}?";
-        }
-        $fullUrl = "{$baseUrl}&WIDTH=" . intval($width) . "&HEIGHT=" . intval($height);
-        return $this->fetchImage($fullUrl, $opacity);
-    }
-
-
-    /**
-     *
      * @param string $url
      * @param float $opacity in [0;1]
      * @return resource (GD)
      * @throws \Exception if image resource could not be created
      */
-    protected function fetchImage($url, $opacity=1.0)
+    public function fetchImage($url, $opacity=1.0)
     {
         $response = $this->mapRequest($url);
         try {
@@ -655,5 +637,30 @@ class ImageExportService implements MapLoaderInterface
     {
         $prefix = "{$this->tempFilePrefix}{$addPrefix}";
         return tempnam($this->tempdir, $prefix);
+    }
+
+    /**
+     * Remove BBOX, WIDTH, HEIGHT params from given url, so we can freely substitute calculated values
+     *
+     * @todo: this method definitely belongs somewhere else (WMS bundle utils most likely)
+     *
+     * @param string $url
+     * @return string
+     */
+    public static function clearExtentParamsFromUrl($url)
+    {
+        // HACK: Assume we don't need to retain anything following or between these params :\
+        // @todo: parse, process, reconstruct URL properly
+        $stripParams = array('bbox', 'width', 'height');
+        foreach ($stripParams as $stripParam) {
+            $stripResult = stristr($url, "&{$stripParam}", true);
+            if ($stripResult !== false) {
+                $url = $stripResult;
+            }
+        }
+        if (false === strpos($url, '?')) {
+            $url = "{$url}?";
+        }
+        return $url;
     }
 }

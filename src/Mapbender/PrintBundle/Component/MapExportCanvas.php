@@ -93,7 +93,8 @@ class MapExportCanvas
      * Download WMS images and blend them on top of the canvas (in order given).
      *
      * @param MapLoaderInterface $loader
-     * @param array[] $layerSpecs each entry should contain values for keys url, opacity
+     * @param array[] $layerSpecs each entry should contain values for keys baseUrl, opacity
+     *      BBOX, WIDTH and HEIGHT params will be added, and SHOULD NOT be present in inputs
      * @param boolean $ignoreErrors to swallow exceptions
      * @throws \Exception
      */
@@ -103,12 +104,14 @@ class MapExportCanvas
         $width = $this->pixelWidth;
         $height = $this->pixelHeight;
         foreach ($layerSpecs as $i => $layerSpec) {
-            $url = $this->clearExtentParamsFromUrl($layerSpec['url']);
+            $url = $layerSpec['baseUrl'];
             $url .= "&BBOX=" . $this->getBboxParam(!empty($layerSpec['changeAxis']));
+            $url .= "&WIDTH=" . intval($width) . "&HEIGHT=" . intval($height);
+
             $this->logger->debug("addLayers Request Nr.: " . $i . ' ' . $url);
 
             try {
-                $rgbaImage = $loader->loadMapTile($url, $width, $height, $layerSpec['opacity']);
+                $rgbaImage = $loader->fetchImage($url, $layerSpec['opacity']);
             } catch (\Exception $e) {
                 if ($ignoreErrors) {
                     continue;
@@ -143,27 +146,6 @@ class MapExportCanvas
             $this->logger = $logger;
         } else {
             $this->logger = new NullLogger();
-        }
-    }
-
-    /**
-     * Remove BBOX, WIDTH, HEIGHT params from given url, so we can freely substitute calculated values
-     *
-     * @todo: this method definitely belongs somewhere else (WMS bundle utils most likely)
-     *
-     * @param string $urlIn
-     * @return string
-     */
-    public static function clearExtentParamsFromUrl($urlIn)
-    {
-        // HACK: Assume BBOX comes first and WIDTH / HEIGHT come after it, if at all; also assume that we don't need
-        //       to retain anything following these params :\
-        // @todo: parse, process, reconstruct URL properly
-        $stripped = strstr($urlIn, '&BBOX', true);
-        if ($stripped !== false) {
-            return $stripped;
-        } else {
-            return $urlIn;
         }
     }
 }
