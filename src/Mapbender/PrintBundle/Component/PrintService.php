@@ -15,9 +15,6 @@ class PrintService extends ImageExportService
     protected $conf;
     protected $rotation;
     protected $user;
-    protected $tempDir;
-    protected $imageWidth;
-    protected $imageHeight;
 
     protected $tempFilePrefix = 'mb_print';
 
@@ -34,13 +31,7 @@ class PrintService extends ImageExportService
     public function doPrint($data)
     {
         $this->setup($data);
-
-        if ($data['rotation'] == 0) {
-            $mainMapImage = $this->buildMainMapImage();
-        } else {
-            $mainMapImage = $this->createFinalRotatedMapImage();
-        }
-
+        $mainMapImage = $this->buildMainMapImage();
         $mapImagePath = $this->generateTempName('_final');
         imagepng($mainMapImage, $mapImagePath);
         imagedestroy($mainMapImage);
@@ -57,10 +48,6 @@ class PrintService extends ImageExportService
         $odgParser = new OdgParser($this->container);
         $this->conf = $conf = $odgParser->getConf($data['template']);
 
-        // image size
-        // @todo: these attribs should be removed (currently used for rotation handling)
-        $this->imageWidth = round($this->pdfUnitsToPixels($conf['map']['width']));
-        $this->imageHeight = round($this->pdfUnitsToPixels($conf['map']['height']));
         parent::setup($data);
     }
 
@@ -92,36 +79,20 @@ class PrintService extends ImageExportService
         return $formattedRequests;
     }
 
-    protected function setupMainMapCanvas($configuration)
+    /**
+     * @param array $data
+     * @return MapExportJob
+     */
+    protected function mainMapJobFactory($data)
     {
-        $extent = $configuration['extent'];
-
-        // switch if image is rotated
-        $rotation = $configuration['rotation'];
-        if ($rotation == 0) {
-            $neededImageWidth = $this->imageWidth;
-            $neededImageHeight = $this->imageHeight;
-            $neededExtent = $extent;
-        } else {
-            // calculate needed image size
-            $neededImageWidth = round(abs(sin(deg2rad($rotation)) * $this->imageHeight) +
-                abs(cos(deg2rad($rotation)) * $this->imageWidth));
-            $neededImageHeight = round(abs(sin(deg2rad($rotation)) * $this->imageWidth) +
-                abs(cos(deg2rad($rotation)) * $this->imageHeight));
-
-            // calculate needed bbox
-            $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extent['height']) +
-                abs(cos(deg2rad($rotation)) * $extent['width']);
-            $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extent['width']) +
-                abs(cos(deg2rad($rotation)) * $extent['height']);
-
-            $neededExtent = array(
-                'width' => $neededExtentWidth,
-                'height' => $neededExtentHeight,
-            );
-        }
-
-        return new MapExportCanvas($configuration['center'], $neededExtent, $neededImageWidth, $neededImageHeight);
+        $pixelDimensions = array(
+            'width'  => round($this->pdfUnitsToPixels($this->conf['map']['width'])),
+            'height' => round($this->pdfUnitsToPixels($this->conf['map']['height'])),
+        );
+        $mapLayers = $this->getMainMapRequests();
+        $geometries = $this->getGeometries();
+        return MapExportJob::factory($data['center'], $data['extent'], $pixelDimensions, $mapLayers, $geometries,
+                                     $data['rotation']);
     }
 
     /**
@@ -148,38 +119,6 @@ class PrintService extends ImageExportService
             }
         }
         return $url . $default;
-    }
-
-    /**
-     *
-     * @return resource (GD)
-     */
-    private function createFinalRotatedMapImage()
-    {
-        $tempImage = $this->buildMainMapImage();
-
-        // rotate temp image
-        $rotation = $this->data['rotation'];
-        $imageWidth = $this->imageWidth;
-        $imageHeight = $this->imageHeight;
-        $transColor = imagecolorallocatealpha($tempImage, 255, 255, 255, 127);
-        $rotatedImage = imagerotate($tempImage, $rotation, $transColor);
-        imagealphablending($rotatedImage, false);
-        imagesavealpha($rotatedImage, true);
-
-        $rotatedWidth = imagesx($rotatedImage);
-        $rotatedHeight = imagesy($rotatedImage);
-
-        $newx = round(($rotatedWidth - $imageWidth ) / 2);
-        $newy = round(($rotatedHeight - $imageHeight ) / 2);
-
-        $clippedImage = imagecreatetruecolor($imageWidth, $imageHeight);
-        imagealphablending($clippedImage, false);
-        imagesavealpha($clippedImage, true);
-        imagecopy($clippedImage, $rotatedImage, 0, 0, $newx, $newy,
-            $imageWidth, $imageHeight);
-
-        return $clippedImage;
     }
 
     /**
@@ -366,66 +305,60 @@ class PrintService extends ImageExportService
 
     private function addOverviewMap()
     {
+        $logger = $this->getLogger();
+
         // calculate needed image size
         $ovImageWidth = round($this->pdfUnitsToPixels($this->conf['overview']['width']));
         $ovImageHeight = round($this->pdfUnitsToPixels($this->conf['overview']['height']));
+        $ovDims = array(
+            'width' => $ovImageWidth,
+            'height' => $ovImageHeight,
+        );
 
-        $changeAxis = false;
+        // prepare geometry + style for red extent rectangle
+        $highlightGeom = array(
+            'type' => 'lineString',
+            'style' => array(
+                'strokeColor' => 'red',
+                'strokeWidth' => 1.0,
+                'strokeOpacity' => 1.0,
+            ),
+            'coordinates' => array(),
+        );
+        foreach ($this->data['extent_feature'] as $pointProjected) {
+            $highlightGeom['coordinates'][] = array(
+                $pointProjected['x'],
+                $pointProjected['y'],
+            );
+        }
+        // repeat first point to close the loop
+        $firstPoint = $this->data['extent_feature'][0];
+        $highlightGeom['coordinates'][] = array($firstPoint['x'], $firstPoint['y']);
 
-        // get images
-        $logger = $this->getLogger();
         # Overview map uses the same center as main map, scale (pixels to projected extend factor) and bounding
         # rectangle are submitted by print client
         // @todo: `scale` is constant for each layer (see mapbender.element.printClient.js), so it should be submitted
-        //        to us outside of the overview layer list. Then we can set up overview extent + canvas outside the loop
+        //        to us outside of the overview layer list. Then we can set up overview extent + job outside the loop
         //        through the layers.
-        $ovCanvas = null;
+        $ovLayers = $this->filterMapLayers($this->data['overview'], null);
+        $ovJob = null;
         foreach ($this->data['overview'] as $i => $layer) {
-            if (!$ovCanvas) {
-                // Print client submits scale in units per meter. PDF (default) unit is mm.
-                $extentScale = $layer['scale'] / 1000;
-                $ovExtent = array(
-                    'width'     => $extentScale * $this->conf['overview']['width'],
-                    'height'    => $extentScale * $this->conf['overview']['height'],
-                );
-                $ovCanvas = new MapExportCanvas($this->data['center'], $ovExtent, $ovImageWidth, $ovImageHeight);
-                $ovCanvas->setLogger($logger);
-            }
-            if (!empty($layer['changeAxis'])) {
-                $changeAxis = true;
-            }
+            // Print client submits scale in units per meter. PDF (default) unit is mm.
+            $extentScale = $layer['scale'] / 1000;
+            $ovExtent = array(
+                'width'     => $extentScale * $this->conf['overview']['width'],
+                'height'    => $extentScale * $this->conf['overview']['height'],
+            );
+            $ovJob = MapExportJob::factory($this->data['center'], $ovExtent, $ovDims, $ovLayers, array($highlightGeom));
+            break;
         }
-        if (!$ovCanvas) {
+        if (!$ovJob) {
             $logger->warning("Empty overview layer list");
             return;
         }
-        /** @var MapExportCanvas $ovCanvas */
-        $ovCanvas->addLayers($this, $this->filterMapLayers($this->data['overview'], null), true);
-        $image = $ovCanvas->getImage();
 
+        $image = $ovJob->run($this, $this, $logger);
         $finalImageName = $this->generateTempName('_merged');
-        // add red extent rectangle
-        // @todo: this is a simple polygon renderer, maybe use drawPolygon?
-        // unproject points to pixel space
-        $points = array();
-        foreach ($this->data['extent_feature'] as $pointProjected) {
-            if (!$changeAxis) {
-                $points[] = $ovCanvas->unproject($pointProjected['x'], $pointProjected['y']);
-            } else {
-                $points[] = $ovCanvas->unproject($pointProjected['y'], $pointProjected['x']);
-            }
-        }
-
-        $red = ImageColorAllocate($image,255,0,0);
-        foreach ($points as $ix => $point) {
-            if ($ix == 0) {
-                $previous = $points[count($points) - 1];
-            } else {
-                $previous = $points[$ix - 1];
-            }
-            imageline($image, $previous[0], $previous[1], $point[0], $point[1], $red);
-        }
-
         imagepng($image, $finalImageName);
 
         // add image to pdf
@@ -583,7 +516,6 @@ class PrintService extends ImageExportService
         }
         return $geoLayers;
     }
-
 
     private function addLegend()
     {

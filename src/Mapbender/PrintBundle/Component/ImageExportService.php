@@ -16,7 +16,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * @author Stefan Winkelmann
  */
-class ImageExportService implements MapLoaderInterface
+class ImageExportService implements MapLoaderInterface, FeatureRendererInterface
 {
     /** @var ContainerInterface */
     protected $container;
@@ -84,22 +84,6 @@ class ImageExportService implements MapLoaderInterface
         return $this->filterMapLayers($this->data['requests']);
     }
 
-    protected function setupMainMapCanvas($configuration)
-    {
-        return new MapExportCanvas(
-            array(
-                'x' => $configuration['centerx'],
-                'y' => $configuration['centery'],
-            ),
-            array(
-                'width' => $configuration['extentwidth'],
-                'height' => $configuration['extentheight'],
-            ),
-            $configuration['width'],
-            $configuration['height']
-        );
-    }
-
     /**
      * Extracts service base URLs by removing BBOX / WIDTH / HEIGHT params, forwards / populates `changeAxis` and
      * `opacity`. By default skips over inputs that do not have `type`="wms" set (use $acceptTypes=null to bypass).
@@ -131,12 +115,31 @@ class ImageExportService implements MapLoaderInterface
      */
     protected function buildMainMapImage()
     {
-        $canvas = $this->setupMainMapCanvas($this->data);
-        $canvas->setLogger($this->getLogger());
-        $canvas->addLayers($this, $this->getMainMapRequests(), false);
-        $this->drawFeatures($canvas);
-        $image = $canvas->getImage();
-        return $image;
+        $job = $this->mainMapJobFactory($this->data);
+        return $job->run($this, $this);
+    }
+
+    /**
+     * @param array $data
+     * @return MapExportJob
+     */
+    protected function mainMapJobFactory($data)
+    {
+        $center = array(
+            'x' => $data['centerx'],
+            'y' => $data['centery'],
+        );
+        $extent = array(
+            'width'  => $data['extentwidth'],
+            'height' => $data['extentheight'],
+        );
+        $pixelDimensions = array(
+            'width'  => $data['width'],
+            'height' => $data['height'],
+        );
+        $mapLayers = $this->getMainMapRequests();
+        $geometries = $this->getGeometries();
+        return MapExportJob::factory($center, $extent, $pixelDimensions, $mapLayers, $geometries);
     }
 
     /**
@@ -310,20 +313,36 @@ class ImageExportService implements MapLoaderInterface
     }
 
     /**
-     * @param MapExportCanvas $canvas target to draw on
+     * @return array[]
      */
-    protected function drawFeatures($canvas)
+    protected function getGeometries()
+    {
+        $geometryLists = array();
+        foreach ($this->getGeometryLayers() as $layer) {
+            $geometryLists[] = $layer['geometries'];
+        }
+        // empty argument list to array_merge is a PHP warning, guard against that
+        if ($geometryLists) {
+            return call_user_func_array('array_merge', $geometryLists);
+        } else {
+            return array();
+        }
+    }
+
+    /**
+     * @param MapExportCanvas $canvas target to draw on
+     * @param array[] $geometries
+     */
+    public function drawFeatures($canvas, $geometries)
     {
         $canvas->beforeFeatures();
-        foreach ($this->getGeometryLayers() as $layer) {
-            foreach ($layer['geometries'] as $geometry) {
-                $renderMethodName = 'draw' . $geometry['type'];
-                if (!method_exists($this, $renderMethodName)) {
-                    continue;
-                    //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
-                }
-                $this->$renderMethodName($canvas, $geometry);
+        foreach ($geometries as $geometry) {
+            $renderMethodName = 'draw' . $geometry['type'];
+            if (!method_exists($this, $renderMethodName)) {
+                continue;
+                //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
             }
+            $this->$renderMethodName($canvas, $geometry);
         }
         $canvas->afterFeatures();
     }
