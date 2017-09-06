@@ -409,24 +409,17 @@ class PrintService extends ImageExportService
         $logger = $this->container->get("logger");
         foreach ($this->data['overview'] as $i => $layer) {
             // calculate needed bbox
-            $ovWidth = $this->conf['overview']['width'] * $layer['scale'] / 1000;
-            $ovHeight = $this->conf['overview']['height'] * $layer['scale'] / 1000;
-            $centerx = $this->data['center']['x'];
-            $centery = $this->data['center']['y'];
+            $ovExtent = $this->conf['overview'];
+            $ovExtent['width'] *= $layer['scale'] / 1000;
+            $ovExtent['height'] *= $layer['scale'] / 1000;
+            $ovCanvas = new MapExportCanvas($this->data['center'], $ovExtent, $ovImageWidth, $ovImageHeight);
 
-            $minX = $centerx - $ovWidth * 0.5;
-            $minY = $centery - $ovHeight * 0.5;
-            $maxX = $centerx + $ovWidth * 0.5;
-            $maxY = $centery + $ovHeight * 0.5;
-            if (empty($layer['changeAxis'])) {
-                $bboxParam = "&BBOX={$minX},{$minY},{$maxX},{$maxY}";
-            } else {
-                $bboxParam = "&BBOX={$minY},{$minX},{$maxY},{$maxX}";
+            if (!empty($layer['changeAxis'])) {
                 $changeAxis = true;
             }
 
             $url = strstr($layer['url'], '&BBOX', true);
-            $url .= $bboxParam;
+            $url .= "&BBOX=" . $ovCanvas->getBboxParam(!empty($layer['changeAxis']));
 
             $logger->debug("Print Overview Request Nr.: " . $i . ' ' . $url);
             try {
@@ -450,9 +443,9 @@ class PrintService extends ImageExportService
         $points = array();
         foreach ($this->data['extent_feature'] as $pointProjected) {
             if (!$changeAxis) {
-                $p[] = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $pointProjected['x'], $pointProjected['y']);
+                $points[] = $ovCanvas->unproject($pointProjected['x'], $pointProjected['y']);
             } else {
-                $p[] = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $pointProjected['x'], $pointProjected['y']);
+                $points[] = $ovCanvas->unproject($pointProjected['y'], $pointProjected['x']);
             }
         }
 
@@ -744,23 +737,6 @@ class PrintService extends ImageExportService
                             $this->conf['legendpage_image']['height'],
                             'png');
         }
-    }
-
-    private function realWorld2ovMapPos($ovWidth, $ovHeight, $rw_x, $rw_y)
-    {
-        $quality  = $this->getQualityDpi();
-        $centerx  = $this->data['center']['x'];
-        $centery  = $this->data['center']['y'];
-        $minX     = $centerx - $ovWidth * 0.5;
-        $minY     = $centery - $ovHeight * 0.5;
-        $maxX     = $centerx + $ovWidth * 0.5;
-        $maxY     = $centery + $ovHeight * 0.5;
-        $extentx  = $maxX - $minX;
-        $extenty  = $maxY - $minY;
-        $pixPos_x = (($rw_x - $minX) / $extentx) * round($this->conf['overview']['width'] / 25.4 * $quality);
-        $pixPos_y = (($maxY - $rw_y) / $extenty) * round($this->conf['overview']['height'] / 25.4 * $quality);
-
-        return array($pixPos_x, $pixPos_y);
     }
 
     /**
