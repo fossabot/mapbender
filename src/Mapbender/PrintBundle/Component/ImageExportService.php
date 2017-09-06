@@ -93,7 +93,7 @@ class ImageExportService implements MapLoaderInterface
         $this->data = $configuration;
         $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
         $this->mainMapCanvas->setLogger($this->getLogger());
-        $this->mapRequests = $this->setupMapRequests($configuration);
+        $this->mapRequests = $this->filterMapLayers($configuration['requests']);
     }
 
     protected function setupMainMapCanvas($configuration)
@@ -112,17 +112,25 @@ class ImageExportService implements MapLoaderInterface
         );
     }
 
-    protected function setupMapRequests($configuration)
+    /**
+     * Extracts service base URLs by removing BBOX / WIDTH / HEIGHT params, forwards / populates `changeAxis` and
+     * `opacity`. By default skips over inputs that do not have `type`="wms" set (use $acceptTypes=null to bypass).
+     *
+     * @param array[] $layersIn
+     * @param string[]|null $acceptTypes null for unfiltered forwarding
+     * @return array[]
+     */
+    protected function filterMapLayers($layersIn, $acceptTypes=array('wms'))
     {
         $formattedRequests = array();
-        foreach ($configuration['requests'] as $i => $layer) {
-            if ($layer['type'] != 'wms') {
+        foreach ($layersIn as $i => $layer) {
+            if ($acceptTypes !== null && !in_array($layer['type'], $acceptTypes)) {
                 continue;
             }
 
             $formattedRequests[$i] = array(
                 'baseUrl'    => $this->clearExtentParamsFromUrl($layer['url']),
-                'opacity'    => $layer['opacity'],
+                'opacity'    => (isset($layer['opacity']) ? $layer['opacity'] : 1.0),
                 'changeAxis' => !empty($layer['changeAxis']),
             );
         }

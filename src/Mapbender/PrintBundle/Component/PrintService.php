@@ -65,31 +65,25 @@ class PrintService extends ImageExportService
         $this->imageHeight = round($this->pdfUnitsToPixels($conf['map']['height']));
         $this->mainMapCanvas = $this->setupMainMapCanvas($data);
         $this->mainMapCanvas->setLogger($this->getLogger());
-        $this->mapRequests = $this->setupMapRequests($data);
+        $this->mapRequests = $this->filterMapLayers($data['layers']);
     }
 
-    protected function setupMapRequests($configuration)
+    /**
+     * @inheritdoc
+     */
+    protected function filterMapLayers($layersIn, $acceptTypes=array('wms'))
     {
         $formattedRequests = array();
         $dpiQuality = $this->getQualityDpi();
-
-        foreach ($configuration['layers'] as $i => $layer) {
-            if ($layer['type'] != 'wms') {
-                continue;
-            }
-            $request = $this->clearExtentParamsFromUrl($layer['url']);
+        foreach (parent::filterMapLayers($layersIn, $acceptTypes) as $i => $layer) {
             if (isset($this->data['replace_pattern'])) {
-                $request = $this->addReplacePattern($request, $dpiQuality);
+                $layer['baseUrl'] = $this->addReplacePattern($layer['baseUrl'], $dpiQuality);
             } else {
                 if ($dpiQuality != '72') {
-                    $request .= '&map_resolution=' . $dpiQuality;
+                    $layer['baseUrl'] .= '&map_resolution=' . $dpiQuality;
                 }
             }
-
-            $formattedRequests[$i] = array(
-                'baseUrl' => $request,
-                'opacity' => $layer['opacity'],
-            );
+            $formattedRequests[] = $layer;
         }
         return $formattedRequests;
     }
@@ -382,7 +376,6 @@ class PrintService extends ImageExportService
         //        to us outside of the overview layer list. Then we can set up overview extent + canvas outside the loop
         //        through the layers.
         $ovCanvas = null;
-        $layersOut = array();
         foreach ($this->data['overview'] as $i => $layer) {
             if (!$ovCanvas) {
                 // Print client submits scale in units per meter. PDF (default) unit is mm.
@@ -394,23 +387,16 @@ class PrintService extends ImageExportService
                 $ovCanvas = new MapExportCanvas($this->data['center'], $ovExtent, $ovImageWidth, $ovImageHeight);
                 $ovCanvas->setLogger($logger);
             }
-            $layersOut[] = array(
-                // pre-strip BBOX (and presumably(?) WIDTH= and HEIGHT=) from layer inputs; they will be added back
-                // when the requests are made
-                'baseUrl'    => $this->clearExtentParamsFromUrl($layer['url']),
-                'opacity'    => 1.0,
-                'changeAxis' => !empty($layer['changeAxis']),
-            );
             if (!empty($layer['changeAxis'])) {
                 $changeAxis = true;
             }
         }
-        if (!$ovCanvas || !$layersOut) {
+        if (!$ovCanvas) {
             $logger->warning("Empty overview layer list");
             return;
         }
         /** @var MapExportCanvas $ovCanvas */
-        $ovCanvas->addLayers($this, $layersOut, true);
+        $ovCanvas->addLayers($this, $this->filterMapLayers($this->data['overview'], null), true);
         $image = $ovCanvas->getImage();
 
         $finalImageName = $this->generateTempName('_merged');
