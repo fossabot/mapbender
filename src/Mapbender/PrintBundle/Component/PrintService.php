@@ -179,7 +179,7 @@ class PrintService extends ImageExportService
 
     /**
      *
-     * @return string absolute path to resulting PNG file
+     * @return resource (GD)
      */
     private function createFinalRotatedMapImage()
     {
@@ -446,35 +446,25 @@ class PrintService extends ImageExportService
 
         // add red extent rectangle
         if (!$changeAxis) {
-            $ll_x = $this->data['extent_feature'][3]['x'];
-            $ll_y = $this->data['extent_feature'][3]['y'];
-            $ul_x = $this->data['extent_feature'][0]['x'];
-            $ul_y = $this->data['extent_feature'][0]['y'];
+            $ll = $this->data['extent_feature'][3];
+            $ul = $this->data['extent_feature'][0];
+            $ur = $this->data['extent_feature'][1];
+            $lr = $this->data['extent_feature'][2];
 
-            $lr_x = $this->data['extent_feature'][2]['x'];
-            $lr_y = $this->data['extent_feature'][2]['y'];
-            $ur_x = $this->data['extent_feature'][1]['x'];
-            $ur_y = $this->data['extent_feature'][1]['y'];
-
-            $p1 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ll_x, $ll_y);
-            $p2 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ul_x, $ul_y);
-            $p3 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ur_x, $ur_y);
-            $p4 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $lr_x, $lr_y);
+            $p1 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ll['x'], $ll['y']);
+            $p2 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ul['x'], $ul['y']);
+            $p3 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ur['x'], $ur['y']);
+            $p4 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $lr['x'], $lr['y']);
         } else {
-            $ul_x = $this->data['extent_feature'][3]['x'];
-            $ul_y = $this->data['extent_feature'][3]['y'];
-            $ll_x = $this->data['extent_feature'][0]['x'];
-            $ll_y = $this->data['extent_feature'][0]['y'];
+            $ll = $this->data['extent_feature'][0];
+            $ul = $this->data['extent_feature'][3];
+            $ur = $this->data['extent_feature'][2];
+            $lr = $this->data['extent_feature'][1];
 
-            $ur_x = $this->data['extent_feature'][2]['x'];
-            $ur_y = $this->data['extent_feature'][2]['y'];
-            $lr_x = $this->data['extent_feature'][1]['x'];
-            $lr_y = $this->data['extent_feature'][1]['y'];
-
-            $p1 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ll_x, $ll_y);
-            $p2 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ul_x, $ul_y);
-            $p3 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ur_x, $ur_y);
-            $p4 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $lr_x, $lr_y);
+            $p1 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ll['x'], $ll['y']);
+            $p2 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ul['x'], $ul['y']);
+            $p3 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ur['x'], $ur['y']);
+            $p4 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $lr['x'], $lr['y']);
         }
 
         $red = ImageColorAllocate($image,255,0,0);
