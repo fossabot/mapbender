@@ -16,7 +16,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * @author Stefan Winkelmann
  */
-class ImageExportService
+class ImageExportService implements MapLoaderInterface
 {
     /** @var ContainerInterface */
     protected $container;
@@ -46,7 +46,7 @@ class ImageExportService
      * @todo: this is a good candidate for a class that absorbs
      *        the transformation functions for geometry rendering
      */
-    /** @var  array */
+    /** @var  MapExportCanvas */
     protected $mainMapCanvas;
 
     public function __construct($container)
@@ -97,17 +97,17 @@ class ImageExportService
 
     protected function setupMainMapCanvas($configuration)
     {
-        return array(
-            'extent' => array(
-                'width' => $configuration['extentwidth'],
-                'height' => $configuration['extentheight'],
-            ),
-            'center' => array(
+        return new MapExportCanvas(
+            array(
                 'x' => $configuration['centerx'],
                 'y' => $configuration['centery'],
             ),
-            'pixelWidth' => $configuration['width'],
-            'pixelHeight' => $configuration['height'],
+            array(
+                'width' => $configuration['extentwidth'],
+                'height' => $configuration['extentheight'],
+            ),
+            $configuration['width'],
+            $configuration['height']
         );
     }
 
@@ -134,65 +134,8 @@ class ImageExportService
      */
     protected function buildMainMapImage()
     {
-        $width = $this->mainMapCanvas['pixelWidth'];
-        $height = $this->mainMapCanvas['pixelHeight'];
-        $imageResource = $this->getImages($this->mapRequests, $width, $height);
-        $this->drawFeatures($imageResource);
-        return $imageResource;
-    }
-
-    /**
-     * Collect WMS tiles and flatten them into a single image.
-     *
-     * @param array[] $layerSpecs each entry should contain values for keys url, opacity
-     * @param integer $width in pixels
-     * @param integer $height in pixels
-     * @return resource GD image
-     */
-    protected function getImages($layerSpecs, $width, $height)
-    {
-        $mergedImage = imagecreatetruecolor($width, $height);
-        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
-        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
-        foreach ($layerSpecs as $i => $layerSpec) {
-            $this->getLogger()->debug("{$this->logPrefix} Request Nr.: " . $i . ' ' . $layerSpec['url']);
-
-            try {
-                $rgbaImage = $this->loadMapTile($layerSpec['url'], $width, $height, $layerSpec['opacity']);
-            } catch (\Exception $e) {
-                // ignore missing layer
-                continue;
-            }
-            imagecopy($mergedImage, $rgbaImage, 0, 0, 0, 0, $width, $height);
-            imagedestroy($rgbaImage);
-        }
-        return $mergedImage;
-    }
-
-    /**
-     * Copy PNGs from given inputNames (in order) onto a new GD image of given
-     * dimensions, and return it.
-     * All valid input PNGs will be deleted!
-     *
-     * @param string[] $inputNames
-     * @param integer $width
-     * @param integer $height
-     * @return resource GD image
-     */
-    protected function mergeImages($inputNames, $width, $height)
-    {
-        $mergedImage = imagecreatetruecolor($width, $height);
-        $bg = ImageColorAllocate($mergedImage, 255, 255, 255);
-        imagefilledrectangle($mergedImage, 0, 0, $width, $height, $bg);
-        foreach ($inputNames as $inputName) {
-            $src = @imagecreatefrompng($inputName);
-            if ($src) {
-                imagecopy($mergedImage, $src, 0, 0, 0, 0, $width, $height);
-                imagedestroy($src);
-            }
-            unlink($inputName);
-        }
-        return $mergedImage;
+        $this->mainMapCanvas->addLayers($this, $this->mapRequests, false);
+        return $this->mainMapCanvas->getImage();
     }
 
     /**
@@ -203,7 +146,7 @@ class ImageExportService
      * @param float $opacity in [0;1]
      * @return resource (GD)
      */
-    protected function forceToRgba($imageResource, $opacity)
+    protected static function forceToRgba($imageResource, $opacity)
     {
         $width = imagesx($imageResource);
         $height = imagesy($imageResource);
@@ -614,18 +557,7 @@ class ImageExportService
     protected function realWorld2mapPos($rw_x, $rw_y)
     {
         $canvas = $this->mainMapCanvas;
-        $extentWidth  = $canvas['extent']['width'];
-        $extentHeight = $canvas['extent']['height'];
-        $centerx   = $canvas['center']['x'];
-        $centery   = $canvas['center']['y'];
-
-        $minX = $centerx - $extentWidth * 0.5;
-        $maxY = $centery + $extentHeight * 0.5;
-
-        $pixPos_x = (($rw_x - $minX) / $extentWidth) * $canvas['pixelWidth'];
-        $pixPos_y = (($maxY - $rw_y) / $extentHeight) * $canvas['pixelHeight'];
-
-        return array($pixPos_x, $pixPos_y);
+        return $canvas->unproject($rw_x, $rw_y);
     }
 
     /**
@@ -668,7 +600,7 @@ class ImageExportService
      * @return resource (GD)
      * @throws \Exception if image resource could not be created
      */
-    protected function loadMapTile($baseUrl, $width, $height, $opacity=1.0)
+    public function loadMapTile($baseUrl, $width, $height, $opacity=1.0)
     {
         if (false === strpos($baseUrl, '?')) {
             $baseUrl = "{$baseUrl}?";

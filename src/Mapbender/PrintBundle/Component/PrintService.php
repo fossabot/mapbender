@@ -54,7 +54,6 @@ class PrintService extends ImageExportService
 
         // data from client
         $this->data = $data;
-        $dpiQuality = $this->getQualityDpi();
 
         $this->template = new PrintTemplate($this->resourceDir . '/templates', $data['template']);
         // template configuration from odg
@@ -62,8 +61,8 @@ class PrintService extends ImageExportService
         $this->conf = $conf = $odgParser->getConf($data['template']);
 
         // image size
-        $this->imageWidth = round($conf['map']['width'] / 25.4 * $dpiQuality);
-        $this->imageHeight = round($conf['map']['height'] / 25.4 * $dpiQuality);
+        $this->imageWidth = round($this->pdfUnitsToPixels($conf['map']['width']));
+        $this->imageHeight = round($this->pdfUnitsToPixels($conf['map']['height']));
         $this->mainMapCanvas = $this->setupMainMapCanvas($data);
         $this->mapRequests = $this->setupMapRequests($data);
     }
@@ -71,33 +70,13 @@ class PrintService extends ImageExportService
     protected function setupMapRequests($configuration)
     {
         $formattedRequests = array();
-
-        $center = $this->mainMapCanvas['center'];
-        $neededExtent = $this->mainMapCanvas['extent'];
-        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
-        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
         $dpiQuality = $this->getQualityDpi();
 
         foreach ($configuration['layers'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $minX = $center['x'] - $neededExtent['width'] * 0.5;
-            $minY = $center['y'] - $neededExtent['height'] * 0.5;
-            $maxX = $center['x'] + $neededExtent['width'] * 0.5;
-            $maxY = $center['y'] + $neededExtent['height'] * 0.5;
-
             $request = strstr($layer['url'], '&BBOX', true);
-            // switch BBOX order for some EPSG if WMS Version 1.3.0
-            if (!empty($layer['changeAxis'])){
-                $bboxParam = "$minY,$minX,$maxY,$maxX";
-            } else {
-                $bboxParam = "$minX,$minY,$maxX,$maxY";
-            }
-
-            $request .= "&BBOX=$bboxParam";
-            $request .= "&WIDTH=${neededImageWidth}&HEIGHT=${neededImageHeight}";
-
             if (isset($this->data['replace_pattern'])) {
                 $request = $this->addReplacePattern($request, $dpiQuality);
             } else {
@@ -143,12 +122,7 @@ class PrintService extends ImageExportService
             );
         }
 
-        return array(
-            'extent' => $neededExtent,
-            'center' => $configuration['center'],
-            'pixelWidth' => $neededImageWidth,
-            'pixelHeight' => $neededImageHeight,
-        );
+        return new MapExportCanvas($configuration['center'], $neededExtent, $neededImageWidth, $neededImageHeight);
     }
 
     /**
@@ -194,15 +168,11 @@ class PrintService extends ImageExportService
         imagealphablending($rotatedImage, false);
         imagesavealpha($rotatedImage, true);
 
-        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
-        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
-        // clip final image from rotated
-        $rotatedWidth = round(abs(sin(deg2rad($rotation)) * $neededImageHeight) +
-            abs(cos(deg2rad($rotation)) * $neededImageWidth));
-        $rotatedHeight = round(abs(sin(deg2rad($rotation)) * $neededImageWidth) +
-            abs(cos(deg2rad($rotation)) * $neededImageHeight));
-        $newx = ($rotatedWidth - $imageWidth ) / 2;
-        $newy = ($rotatedHeight - $imageHeight ) / 2;
+        $rotatedWidth = imagesx($rotatedImage);
+        $rotatedHeight = imagesy($rotatedImage);
+
+        $newx = round(($rotatedWidth - $imageWidth ) / 2);
+        $newy = round(($rotatedHeight - $imageHeight ) / 2);
 
         $clippedImage = imagecreatetruecolor($imageWidth, $imageHeight);
         imagealphablending($clippedImage, false);
@@ -398,45 +368,51 @@ class PrintService extends ImageExportService
     private function addOverviewMap()
     {
         // calculate needed image size
-        $quality = $this->data['quality'];
-        $ovImageWidth = round($this->conf['overview']['width'] / 25.4 * $quality);
-        $ovImageHeight = round($this->conf['overview']['height'] / 25.4 * $quality);
+        $ovImageWidth = round($this->pdfUnitsToPixels($this->conf['overview']['width']));
+        $ovImageHeight = round($this->pdfUnitsToPixels($this->conf['overview']['height']));
 
         $changeAxis = false;
 
         // get images
-        $tempNames = array();
-        $logger = $this->container->get("logger");
+        $logger = $this->getLogger();
+        # Overview map uses the same center as main map, scale (pixels to projected extend factor) and bounding
+        # rectangle are submitted by print client
+        // @todo: `scale` is constant for each layer (see mapbender.element.printClient.js), so it should be submitted
+        //        to us outside of the overview layer list. Then we can set up overview extent + canvas outside the loop
+        //        through the layers.
+        $ovCanvas = null;
+        $layersOut = array();
         foreach ($this->data['overview'] as $i => $layer) {
-            // calculate needed bbox
-            $ovExtent = $this->conf['overview'];
-            $ovExtent['width'] *= $layer['scale'] / 1000;
-            $ovExtent['height'] *= $layer['scale'] / 1000;
-            $ovCanvas = new MapExportCanvas($this->data['center'], $ovExtent, $ovImageWidth, $ovImageHeight);
-
+            if (!$ovCanvas) {
+                // Print client submits scale in units per meter. PDF (default) unit is mm.
+                $extentScale = $layer['scale'] / 1000;
+                $ovExtent = array(
+                    'width'     => $extentScale * $this->conf['overview']['width'],
+                    'height'    => $extentScale * $this->conf['overview']['height'],
+                );
+                $ovCanvas = new MapExportCanvas($this->data['center'], $ovExtent, $ovImageWidth, $ovImageHeight);
+                $ovCanvas->setLogger($logger);
+            }
+            $layersOut[] = array(
+                // pre-strip BBOX (and presumably(?) WIDTH= and HEIGHT=) from layer inputs; they will be added back
+                // when the requests are made
+                'url'        => strstr($layer['url'], '&BBOX', true),
+                'opacity'    => 1.0,
+                'changeAxis' => !empty($layer['changeAxis']),
+            );
             if (!empty($layer['changeAxis'])) {
                 $changeAxis = true;
             }
-
-            $url = strstr($layer['url'], '&BBOX', true);
-            $url .= "&BBOX=" . $ovCanvas->getBboxParam(!empty($layer['changeAxis']));
-
-            $logger->debug("Print Overview Request Nr.: " . $i . ' ' . $url);
-            try {
-                $im = $this->loadMapTile($url, $ovImageWidth, $ovImageHeight);
-                $imageName = $this->generateTempName();
-                imagepng($im, $imageName);
-                $tempNames[] = $imageName;
-                imagedestroy($im);
-            } catch (\Exception $e) {
-                // ignore missing overview layer
-            }
         }
+        if (!$ovCanvas || !$layersOut) {
+            $logger->warning("Empty overview layer list");
+            return;
+        }
+        /** @var MapExportCanvas $ovCanvas */
+        $ovCanvas->addLayers($this, $layersOut, true);
+        $image = $ovCanvas->getImage();
 
-        // create final merged image
         $finalImageName = $this->generateTempName('_merged');
-        $image = $this->mergeImages($tempNames, $ovImageWidth, $ovImageHeight);
-
         // add red extent rectangle
         // @todo: this is a simple polygon renderer, maybe use drawPolygon?
         // unproject points to pixel space
@@ -460,7 +436,6 @@ class PrintService extends ImageExportService
         }
 
         imagepng($image, $finalImageName);
-        imagedestroy($image);
 
         // add image to pdf
         $this->pdf->Image($finalImageName,
@@ -786,5 +761,16 @@ class PrintService extends ImageExportService
         } else {
             return null;
         }
+    }
+
+    /**
+     * Convert coordinate or length from PDF space (mm base by default) to pixel space.
+     *
+     * @param float $x
+     * @return float
+     */
+    protected function pdfUnitsToPixels($x)
+    {
+        return $x / 25.4 * $this->getQualityDpi();
     }
 }
