@@ -26,8 +26,6 @@ class ImageExportService implements MapLoaderInterface
     protected $urlHostPath;
     /** @var  array */
     protected $data;
-    /** @var array */
-    protected $mapRequests = array();
     /** @var string */
     protected $resourceDir;
 
@@ -88,12 +86,19 @@ class ImageExportService implements MapLoaderInterface
     /**
      * @param array $configuration
      */
-    private function setup($configuration)
+    protected function setup($configuration)
     {
         $this->data = $configuration;
         $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
         $this->mainMapCanvas->setLogger($this->getLogger());
-        $this->mapRequests = $this->filterMapLayers($configuration['requests']);
+    }
+
+    /**
+     * @return array[] each with keys baseUrl, opacity, changeAxis
+     */
+    protected function getMainMapRequests()
+    {
+        return $this->filterMapLayers($this->data['requests']);
     }
 
     protected function setupMainMapCanvas($configuration)
@@ -143,8 +148,10 @@ class ImageExportService implements MapLoaderInterface
      */
     protected function buildMainMapImage()
     {
-        $this->mainMapCanvas->addLayers($this, $this->mapRequests, false);
-        return $this->mainMapCanvas->getImage();
+        $this->mainMapCanvas->addLayers($this, $this->getMainMapRequests(), false);
+        $image = $this->mainMapCanvas->getImage();
+        $this->drawFeatures($image);
+        return $image;
     }
 
     /**

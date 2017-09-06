@@ -48,12 +48,9 @@ class PrintService extends ImageExportService
         return $this->buildPdf($mapImagePath);
     }
 
-    private function setup($data)
+    protected function setup($data)
     {
         $this->user      = $this->getUser();
-
-        // data from client
-        $this->data = $data;
 
         $this->template = new PrintTemplate($this->resourceDir . '/templates', $data['template']);
         // template configuration from odg
@@ -61,11 +58,18 @@ class PrintService extends ImageExportService
         $this->conf = $conf = $odgParser->getConf($data['template']);
 
         // image size
+        // @todo: these attribs should be removed (currently used for rotation handling)
         $this->imageWidth = round($this->pdfUnitsToPixels($conf['map']['width']));
         $this->imageHeight = round($this->pdfUnitsToPixels($conf['map']['height']));
-        $this->mainMapCanvas = $this->setupMainMapCanvas($data);
-        $this->mainMapCanvas->setLogger($this->getLogger());
-        $this->mapRequests = $this->filterMapLayers($data['layers']);
+        parent::setup($data);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function getMainMapRequests()
+    {
+        return $this->filterMapLayers($this->data['layers']);
     }
 
     /**
