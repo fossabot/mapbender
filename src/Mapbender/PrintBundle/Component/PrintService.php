@@ -64,46 +64,24 @@ class PrintService extends ImageExportService
         // image size
         $this->imageWidth = round($conf['map']['width'] / 25.4 * $dpiQuality);
         $this->imageHeight = round($conf['map']['height'] / 25.4 * $dpiQuality);
+        $this->mainMapCanvas = $this->setupMainMapCanvas($data);
+        $this->mapRequests = $this->setupMapRequests($data);
+    }
 
-        foreach ($data['layers'] as $i => $layer) {
+    protected function setupMapRequests($configuration)
+    {
+        $formattedRequests = array();
+
+        $center = $this->mainMapCanvas['center'];
+        $neededExtent = $this->mainMapCanvas['extent'];
+        $neededImageWidth = $this->mainMapCanvas['pixelWidth'];
+        $neededImageHeight = $this->mainMapCanvas['pixelHeight'];
+        $dpiQuality = $this->getQualityDpi();
+
+        foreach ($configuration['layers'] as $i => $layer) {
             if ($layer['type'] != 'wms') {
                 continue;
             }
-            $extent = $data['extent'];
-            $center = $data['center'];
-
-            // switch if image is rotated
-            $this->rotation = $rotation = $data['rotation'];
-            if ($rotation == 0) {
-                $neededImageWidth = $this->imageWidth;
-                $neededImageHeight = $this->imageHeight;
-                $neededExtent = $extent;
-            } else {
-                // calculate needed image size
-                $neededImageWidth = round(abs(sin(deg2rad($rotation)) * $this->imageHeight) +
-                    abs(cos(deg2rad($rotation)) * $this->imageWidth));
-                $neededImageHeight = round(abs(sin(deg2rad($rotation)) * $this->imageWidth) +
-                    abs(cos(deg2rad($rotation)) * $this->imageHeight));
-
-                // calculate needed bbox
-                $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extent['height']) +
-                    abs(cos(deg2rad($rotation)) * $extent['width']);
-                $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extent['width']) +
-                    abs(cos(deg2rad($rotation)) * $extent['height']);
-
-                $neededExtent = array(
-                    'width' => $neededExtentWidth,
-                    'height' => $neededExtentHeight,
-                );
-            }
-
-            $this->mainMapCanvas = array(
-                'extent' => $neededExtent,
-                'center' => $center,
-                'pixelWidth' => $neededImageWidth,
-                'pixelHeight' => $neededImageHeight,
-            );
-
             $minX = $center['x'] - $neededExtent['width'] * 0.5;
             $minY = $center['y'] - $neededExtent['height'] * 0.5;
             $maxX = $center['x'] + $neededExtent['width'] * 0.5;
@@ -128,11 +106,49 @@ class PrintService extends ImageExportService
                 }
             }
 
-            $this->mapRequests[$i] = array(
+            $formattedRequests[$i] = array(
                 'url'     => $request,
                 'opacity' => $layer['opacity'],
             );
         }
+        return $formattedRequests;
+    }
+
+    protected function setupMainMapCanvas($configuration)
+    {
+        $extent = $configuration['extent'];
+
+        // switch if image is rotated
+        $rotation = $configuration['rotation'];
+        if ($rotation == 0) {
+            $neededImageWidth = $this->imageWidth;
+            $neededImageHeight = $this->imageHeight;
+            $neededExtent = $extent;
+        } else {
+            // calculate needed image size
+            $neededImageWidth = round(abs(sin(deg2rad($rotation)) * $this->imageHeight) +
+                abs(cos(deg2rad($rotation)) * $this->imageWidth));
+            $neededImageHeight = round(abs(sin(deg2rad($rotation)) * $this->imageWidth) +
+                abs(cos(deg2rad($rotation)) * $this->imageHeight));
+
+            // calculate needed bbox
+            $neededExtentWidth = abs(sin(deg2rad($rotation)) * $extent['height']) +
+                abs(cos(deg2rad($rotation)) * $extent['width']);
+            $neededExtentHeight = abs(sin(deg2rad($rotation)) * $extent['width']) +
+                abs(cos(deg2rad($rotation)) * $extent['height']);
+
+            $neededExtent = array(
+                'width' => $neededExtentWidth,
+                'height' => $neededExtentHeight,
+            );
+        }
+
+        return array(
+            'extent' => $neededExtent,
+            'center' => $configuration['center'],
+            'pixelWidth' => $neededImageWidth,
+            'pixelHeight' => $neededImageHeight,
+        );
     }
 
     /**
@@ -170,7 +186,7 @@ class PrintService extends ImageExportService
         $tempImage = $this->buildMainMapImage();
 
         // rotate temp image
-        $rotation = $this->rotation;
+        $rotation = $this->data['rotation'];
         $imageWidth = $this->imageWidth;
         $imageHeight = $this->imageHeight;
         $transColor = imagecolorallocatealpha($tempImage, 255, 255, 255, 127);
@@ -346,7 +362,7 @@ class PrintService extends ImageExportService
     private function addNorthArrow($config)
     {
         $pngPath = $this->resourceDir . '/images/northarrow.png';
-        $rotation = $this->rotation;
+        $rotation = $this->data['rotation'];
         $rotatedImageName = null;
 
         if($rotation != 0){

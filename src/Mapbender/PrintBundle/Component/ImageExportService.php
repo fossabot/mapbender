@@ -95,7 +95,7 @@ class ImageExportService
         $this->mapRequests = $this->setupMapRequests($configuration);
     }
 
-    protected static function setupMainMapCanvas($configuration)
+    protected function setupMainMapCanvas($configuration)
     {
         return array(
             'extent' => array(
@@ -111,7 +111,7 @@ class ImageExportService
         );
     }
 
-    protected static function setupMapRequests($configuration)
+    protected function setupMapRequests($configuration)
     {
         $formattedRequests = array();
         foreach ($configuration['requests'] as $i => $layer) {
