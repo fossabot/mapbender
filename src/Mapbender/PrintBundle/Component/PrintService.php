@@ -445,33 +445,26 @@ class PrintService extends ImageExportService
         $image = $this->mergeImages($tempNames, $ovImageWidth, $ovImageHeight);
 
         // add red extent rectangle
-        if (!$changeAxis) {
-            $ll = $this->data['extent_feature'][3];
-            $ul = $this->data['extent_feature'][0];
-            $ur = $this->data['extent_feature'][1];
-            $lr = $this->data['extent_feature'][2];
-
-            $p1 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ll['x'], $ll['y']);
-            $p2 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ul['x'], $ul['y']);
-            $p3 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $ur['x'], $ur['y']);
-            $p4 = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $lr['x'], $lr['y']);
-        } else {
-            $ll = $this->data['extent_feature'][0];
-            $ul = $this->data['extent_feature'][3];
-            $ur = $this->data['extent_feature'][2];
-            $lr = $this->data['extent_feature'][1];
-
-            $p1 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ll['x'], $ll['y']);
-            $p2 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ul['x'], $ul['y']);
-            $p3 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $ur['x'], $ur['y']);
-            $p4 = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $lr['x'], $lr['y']);
+        // @todo: this is a simple polygon renderer, maybe use drawPolygon?
+        // unproject points to pixel space
+        $points = array();
+        foreach ($this->data['extent_feature'] as $pointProjected) {
+            if (!$changeAxis) {
+                $p[] = $this->realWorld2ovMapPos($ovWidth, $ovHeight, $pointProjected['x'], $pointProjected['y']);
+            } else {
+                $p[] = $this->realWorld2ovMapPos($ovHeight, $ovWidth, $pointProjected['x'], $pointProjected['y']);
+            }
         }
 
         $red = ImageColorAllocate($image,255,0,0);
-        imageline ( $image, $p1[0], $p1[1], $p2[0], $p2[1], $red);
-        imageline ( $image, $p2[0], $p2[1], $p3[0], $p3[1], $red);
-        imageline ( $image, $p3[0], $p3[1], $p4[0], $p4[1], $red);
-        imageline ( $image, $p4[0], $p4[1], $p1[0], $p1[1], $red);
+        foreach ($points as $ix => $point) {
+            if ($ix == 0) {
+                $previous = $points[count($points) - 1];
+            } else {
+                $previous = $points[$ix - 1];
+            }
+            imageline($image, $previous[0], $previous[1], $point[0], $point[1], $red);
+        }
 
         imagepng($image, $finalImageName);
         imagedestroy($image);
