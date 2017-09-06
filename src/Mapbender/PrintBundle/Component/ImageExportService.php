@@ -32,21 +32,6 @@ class ImageExportService implements MapLoaderInterface
     protected $tempFilePrefix = 'mb_imgexp';
     protected $logPrefix;
 
-    /**
-     * Here we store information about the drawing canvas (!= output sizing)
-     * This is bigger than ouptut for rotated rendering and will later be
-     * clipped down.
-     *
-     * * center x, y (in projection system)
-     * * extent width, height (in projection system)
-     * * pixelWidth
-     * * pixelHeight
-     * @todo: this is a good candidate for a class that absorbs
-     *        the transformation functions for geometry rendering
-     */
-    /** @var  MapExportCanvas */
-    protected $mainMapCanvas;
-
     public function __construct($container)
     {
         $this->container = $container;
@@ -89,8 +74,6 @@ class ImageExportService implements MapLoaderInterface
     protected function setup($configuration)
     {
         $this->data = $configuration;
-        $this->mainMapCanvas = $this->setupMainMapCanvas($configuration);
-        $this->mainMapCanvas->setLogger($this->getLogger());
     }
 
     /**
@@ -148,9 +131,11 @@ class ImageExportService implements MapLoaderInterface
      */
     protected function buildMainMapImage()
     {
-        $this->mainMapCanvas->addLayers($this, $this->getMainMapRequests(), false);
-        $image = $this->mainMapCanvas->getImage();
-        $this->drawFeatures($image);
+        $canvas = $this->setupMainMapCanvas($this->data);
+        $canvas->setLogger($this->getLogger());
+        $canvas->addLayers($this, $this->getMainMapRequests(), false);
+        $this->drawFeatures($canvas);
+        $image = $canvas->getImage();
         return $image;
     }
 
@@ -325,13 +310,11 @@ class ImageExportService implements MapLoaderInterface
     }
 
     /**
-     * @param resource $targetImage GD image to draw on
+     * @param MapExportCanvas $canvas target to draw on
      */
-    protected function drawFeatures($targetImage)
+    protected function drawFeatures($canvas)
     {
-        imagesavealpha($targetImage, true);
-        imagealphablending($targetImage, true);
-
+        $canvas->beforeFeatures();
         foreach ($this->getGeometryLayers() as $layer) {
             foreach ($layer['geometries'] as $geometry) {
                 $renderMethodName = 'draw' . $geometry['type'];
@@ -339,9 +322,10 @@ class ImageExportService implements MapLoaderInterface
                     continue;
                     //throw new \RuntimeException('Can not draw geometries of type "' . $geometry['type'] . '".');
                 }
-                $this->$renderMethodName($geometry, $targetImage);
+                $this->$renderMethodName($canvas, $geometry);
             }
         }
+        $canvas->afterFeatures();
     }
 
     protected function getColor($color, $alpha, $image)
@@ -356,8 +340,13 @@ class ImageExportService implements MapLoaderInterface
         }
     }
 
-    protected function drawPolygon($geometry, $image)
+    /**
+     * @param MapExportCanvas $canvas
+     * @param array $geometry
+     */
+    protected function drawPolygon($canvas, $geometry)
     {
+        $image = $canvas->getImage();
         $resizeFactor = $this->getResizeFactor();
         $style = $this->getStyle($geometry);
         foreach($geometry['coordinates'] as $ring) {
@@ -367,7 +356,7 @@ class ImageExportService implements MapLoaderInterface
 
             $points = array();
             foreach($ring as $c) {
-                $p = $this->realWorld2mapPos($c[0], $c[1]);
+                $p = $canvas->unproject($c[0], $c[1]);
                 $points[] = floatval($p[0]);
                 $points[] = floatval($p[1]);
             }
@@ -392,9 +381,13 @@ class ImageExportService implements MapLoaderInterface
         }
     }
 
-
-    protected function drawMultiPolygon($geometry, $image)
+    /**
+     * @param MapExportCanvas $canvas
+     * @param array $geometry
+     */
+    protected function drawMultiPolygon($canvas, $geometry)
     {
+        $image = $canvas->getImage();
         $resizeFactor = $this->getResizeFactor();
         $style = $this->getStyle($geometry);
         foreach ($geometry['coordinates'] as $element) {
@@ -405,7 +398,7 @@ class ImageExportService implements MapLoaderInterface
 
                 $points = array();
                 foreach($ring as $c) {
-                    $p = $this->realWorld2mapPos($c[0], $c[1]);
+                    $p = $canvas->unproject($c[0], $c[1]);
                     $points[] = floatval($p[0]);
                     $points[] = floatval($p[1]);
                 }
@@ -432,9 +425,13 @@ class ImageExportService implements MapLoaderInterface
     }
 
 
-
-    protected function drawLineString($geometry, $image)
+    /**
+     * @param MapExportCanvas $canvas
+     * @param array $geometry
+     */
+    protected function drawLineString($canvas, $geometry)
     {
+        $image = $canvas->getImage();
         $resizeFactor = $this->getResizeFactor();
         $style = $this->getStyle($geometry);
         if ($style['strokeWidth'] == 0) {
@@ -447,10 +444,10 @@ class ImageExportService implements MapLoaderInterface
             $style['strokeOpacity'],
             $image);
         for($i = 1; $i < count($geometry['coordinates']); $i++) {
-            $from = $this->realWorld2mapPos(
+            $from = $canvas->unproject(
                 $geometry['coordinates'][$i - 1][0],
                 $geometry['coordinates'][$i - 1][1]);
-            $to = $this->realWorld2mapPos(
+            $to = $canvas->unproject(
                 $geometry['coordinates'][$i][0],
                 $geometry['coordinates'][$i][1]);
 
@@ -458,8 +455,13 @@ class ImageExportService implements MapLoaderInterface
         }
     }
 
-    protected function drawMultiLineString($geometry, $image)
+    /**
+     * @param MapExportCanvas $canvas
+     * @param array $geometry
+     */
+    protected function drawMultiLineString($canvas, $geometry)
     {
+        $image = $canvas->getImage();
         $resizeFactor = $this->getResizeFactor();
         $style = $this->getStyle($geometry);
         $color = $this->getColor(
@@ -473,10 +475,10 @@ class ImageExportService implements MapLoaderInterface
 
         foreach($geometry['coordinates'] as $coords) {
             for($i = 1; $i < count($coords); $i++) {
-                $from = $this->realWorld2mapPos(
+                $from = $canvas->unproject(
                     $coords[$i - 1][0],
                     $coords[$i - 1][1]);
-                $to = $this->realWorld2mapPos(
+                $to = $canvas->unproject(
                     $coords[$i][0],
                     $coords[$i][1]);
                 imageline($image, $from[0], $from[1], $to[0], $to[1], $color);
@@ -520,13 +522,19 @@ class ImageExportService implements MapLoaderInterface
             $center[0], $center[1], $color, $font, $style['label']);
     }
 
-    protected function drawPoint($geometry, $image, $skipOnEmptyLabel=true)
+    /**
+     * @param MapExportCanvas $canvas
+     * @param array $geometry
+     * @param boolean $skipOnLabel if true (default), a present label suppresses the actual point geometry
+     */
+    protected function drawPoint($canvas, $geometry, $skipOnLabel=true)
     {
+        $image = $canvas->getImage();
         $style = $this->getStyle($geometry);
         $c = $geometry['coordinates'];
         $resizeFactor = $this->getResizeFactor();
 
-        $p = $this->realWorld2mapPos($c[0], $c[1]);
+        $p = $canvas->unproject($c[0], $c[1]);
 
         if (isset($style['label'])) {
             $this->drawHaloText($image, $p, 14, $style['label'], $style);
@@ -536,7 +544,7 @@ class ImageExportService implements MapLoaderInterface
              *        a label exists; PrintService still renders the point, but
              *        after the label (potentially obscuring it)
              */
-            if ($skipOnEmptyLabel) {
+            if ($skipOnLabel) {
                 return;
             }
         }
@@ -560,20 +568,6 @@ class ImageExportService implements MapLoaderInterface
             imagesetthickness($image, $style['strokeWidth'] * $resizeFactor);
             imageellipse($image, $p[0], $p[1], 2 * $radius, 2 * $radius, $color);
         }
-    }
-
-    /**
-     * Transform an x / y coordinate from a map projection system into a pixel
-     * offset.
-     *
-     * @param float $rw_x
-     * @param float $rw_y
-     * @return float[] pixel offset x / y
-     */
-    protected function realWorld2mapPos($rw_x, $rw_y)
-    {
-        $canvas = $this->mainMapCanvas;
-        return $canvas->unproject($rw_x, $rw_y);
     }
 
     /**

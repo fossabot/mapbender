@@ -36,15 +36,8 @@ class MapExportCanvas
         $this->setLogger(null);
     }
 
-    public function __destruct()
-    {
-        if ($this->gdResource) {
-            imagedestroy($this->gdResource);
-        }
-    }
-
     /**
-     * Transform given x/y from projection to pixel space. Return value is an array with x/y keys.
+     * Transform given x/y from projection to pixel space. Return value is an array with x/y values.
      * @todo: input should be in same format as return
      * @todo: minX/minY and scale factors can be precalculated in ctor. Bbox method would also benefit from precalc.
      *
@@ -147,5 +140,16 @@ class MapExportCanvas
         } else {
             $this->logger = new NullLogger();
         }
+    }
+
+    public function beforeFeatures()
+    {
+        $imageResource = $this->getImage();
+        imagesavealpha($imageResource, true);
+        imagealphablending($imageResource, true);
+    }
+
+    public function afterFeatures()
+    {
     }
 }

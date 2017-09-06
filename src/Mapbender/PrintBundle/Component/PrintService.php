@@ -561,11 +561,13 @@ class PrintService extends ImageExportService
     }
 
 
-
-
-    protected function drawPoint($geometry, $image, $dummy=false)
+    /**
+     * @inheritdoc
+     * @override to make $skipOnLabel false by default, no other change
+     */
+    protected function drawPoint($canvas, $geometry, $dummy=false)
     {
-        return parent::drawPoint($geometry, $image, false);
+        return parent::drawPoint($canvas, $geometry, false);
     }
 
     /**
